@@ -2,7 +2,7 @@
 
 Multi-agent pipeline that:
 1. Builds a strategic decision document from structured input.
-2. Runs executive reviews in parallel (CEO, CFO, CTO, Compliance/Legal).
+2. Runs executive reviews (CEO, CFO, CTO, Compliance/Legal).
 3. Synthesizes feedback and computes DQS.
 4. Generates a PRD when approved.
 5. Persists artifacts locally and optionally in Notion databases.

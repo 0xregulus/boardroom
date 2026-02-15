@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import re
-import uuid
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, TypedDict
 
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
@@ -121,6 +119,33 @@ def _rt(text: str) -> Dict[str, Any]:
 def _title(text: str) -> Dict[str, Any]:
     return to_title(text)
 
+
+def _status_property_payload(status_property: dict[str, Any] | None, status_value: str) -> dict[str, Any]:
+    prop_type = status_property.get("type") if isinstance(status_property, dict) else None
+    if prop_type == "select":
+        return {"Status": {"select": {"name": status_value}}}
+    return {"Status": {"status": {"name": status_value}}}
+
+
+def _update_page_status(
+    client: Client,
+    page_id: str,
+    status_value: str,
+    page_properties: dict[str, Any] | None = None,
+) -> None:
+    primary_payload = _status_property_payload((page_properties or {}).get("Status"), status_value)
+    try:
+        client.pages.update(page_id=page_id, properties=primary_payload)
+        return
+    except Exception:
+        # Retry with the alternate status payload shape for mixed Notion schemas.
+        if "status" in primary_payload.get("Status", {}):
+            fallback_payload = {"Status": {"select": {"name": status_value}}}
+        else:
+            fallback_payload = {"Status": {"status": {"name": status_value}}}
+        client.pages.update(page_id=page_id, properties=fallback_payload)
+
+
 DECISION_SOURCE_HEADINGS = [
     "Executive Summary",
     "1. Strategic Context",
@@ -173,10 +198,26 @@ LABEL_ONLY_PHRASES = {
     "we will stop or pivot if",
 }
 
+LINE_PREFIXES_TO_STRIP = (
+    "decision requirement:",
+    "executive requirement:",
+    "problem framing:",
+    "options evaluated:",
+    "financial model:",
+    "kill criterion:",
+    "decision memo:",
+)
+
 
 def _clean_line(text: str, max_len: int = 260) -> str:
     normalized = text.replace("**", "").replace("`", "")
     normalized = " ".join(normalized.replace("\t", " ").split()).strip(" -•")
+    lowered = normalized.lower()
+    for prefix in LINE_PREFIXES_TO_STRIP:
+        if lowered.startswith(prefix):
+            normalized = normalized[len(prefix) :].strip()
+            lowered = normalized.lower()
+            break
     trimmed = normalized[:max_len].strip()
     lower_trimmed = trimmed.lower().rstrip(":")
     if lower_trimmed in {"", "+", "|", "-", "chosen option", "trade-offs", "trade offs"}:
@@ -190,6 +231,14 @@ def _is_label_only_line(line: str) -> bool:
         return True
     if normalized in LABEL_ONLY_PHRASES:
         return True
+    if normalized in {"combine", "+"}:
+        return True
+    if ":" in normalized:
+        tail = normalized.split(":")[-1].strip()
+        if not tail or tail in LABEL_ONLY_PHRASES or tail in {"combine", "+"}:
+            return True
+        if re.fullmatch(r"option\s+[a-z0-9]+(?:\s*\(.+\))?", tail):
+            return True
     if normalized.endswith(":"):
         core = normalized[:-1].strip()
         if not core:
@@ -643,8 +692,6 @@ def _invalid_review_fallback(agent_name: str, reason: str) -> ReviewOutput:
     )
 
 def _upsert_notion_review(client: Client, executive_reviews_db_id: str, page_id: str, agent_name: str, review_output: ReviewOutput) -> None:
-    print(f"DEBUG: _upsert_notion_review called for agent={agent_name}, page_id={page_id}, db_id={executive_reviews_db_id}")
-    print(f"DEBUG: Review Output (thesis, score, blocked): {review_output.thesis[:50]}..., {review_output.score}, {review_output.blocked}")
     try:
         stable_key = f"{page_id}:{agent_name}"
         executive_reviews_data_source_id = _first_data_source_id(client, executive_reviews_db_id)
@@ -665,10 +712,8 @@ def _upsert_notion_review(client: Client, executive_reviews_db_id: str, page_id:
 
         if existing_reviews:
             client.pages.update(page_id=existing_reviews[0]["id"], properties=properties)
-            print(f"DEBUG: Updated existing review for {agent_name} (Page ID: {existing_reviews[0]['id']})")
         else:
-            created_page = client.pages.create(parent={"database_id": executive_reviews_db_id}, properties=properties)
-            print(f"DEBUG: Created new review for {agent_name} (Page ID: {created_page['id']})")
+            client.pages.create(parent={"database_id": executive_reviews_db_id}, properties=properties)
     except Exception as exc:
         raise RuntimeError(
             "Failed to persist executive review to Notion "
@@ -799,9 +844,14 @@ class BoardroomDecisionWorkflow:
             missing_sections = evaluate_required_gates(page_properties, inferred_checks=inferred_checks)
             status_value = "Under Evaluation" if not missing_sections else "Incomplete"
 
-            update_properties: dict[str, Any] = {"Status": {"select": {"name": status_value}}}
-            update_properties.update(checkbox_updates)
-            self.notion_client.pages.update(page_id=decision_id, properties=update_properties)
+            _update_page_status(
+                self.notion_client,
+                page_id=decision_id,
+                status_value=status_value,
+                page_properties=page_properties,
+            )
+            if checkbox_updates:
+                self.notion_client.pages.update(page_id=decision_id, properties=checkbox_updates)
 
             decision_name = "".join(t.get("plain_text", "") for t in page_properties.get("Decision Name", {}).get("title", [])) or f"Untitled Decision {decision_id}"
 
@@ -872,20 +922,21 @@ class BoardroomDecisionWorkflow:
         print("--- Deciding Gate ---")
         dqs = state["dqs"]
         decision_id = state["decision_id"]
+        page_properties = state["decision_snapshot"].properties if state.get("decision_snapshot") else None
         
         any_blocked = any(review.blocked for review in state["reviews"].values())
 
         if any_blocked:
             print("Decision BLOCKED by an executive agent.")
-            self.notion_client.pages.update(page_id=decision_id, properties={"Status": {"select": {"name": "Blocked"}}})
+            _update_page_status(self.notion_client, decision_id, "Blocked", page_properties=page_properties)
             return "blocked"
         elif dqs < 7.0:
             print(f"DQS ({dqs}) is below threshold (7.0). Revision required.")
-            self.notion_client.pages.update(page_id=decision_id, properties={"Status": {"select": {"name": "Challenged"}}})
+            _update_page_status(self.notion_client, decision_id, "Challenged", page_properties=page_properties)
             return "revision_required"
         else:
             print(f"DQS ({dqs}) is sufficient. Decision APPROVED.")
-            self.notion_client.pages.update(page_id=decision_id, properties={"Status": {"select": {"name": "Approved"}}})
+            _update_page_status(self.notion_client, decision_id, "Approved", page_properties=page_properties)
             return "approved"
 
     def _generate_prd_node(self, state: GraphState) -> GraphState:

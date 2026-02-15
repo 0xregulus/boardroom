@@ -78,10 +78,9 @@ class ComplianceAgent(BaseAgent):
                         f"(finish_reason={last_finish_reason}, attempt={attempt}). Retrying with higher max_tokens."
                     )
 
-            tail = last_content[-240:] if last_content else "<empty>"
             return self._placeholder_output(
                 "Compliance JSON parsing failed after retry "
-                f"(finish_reason={last_finish_reason}, tail={tail})."
+                f"(finish_reason={last_finish_reason})."
             )
         except Exception as e:
             print(f"Error in Compliance Agent LLM call: {e}")

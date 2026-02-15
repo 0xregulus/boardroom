@@ -53,7 +53,7 @@ class ChairpersonAgent(BaseAgent):
                         extracted_json_str = content[start_index : end_index + 1]
                         parsed = json.loads(extracted_json_str)
                     except json.JSONDecodeError:
-                        print(f"DEBUG: Could not extract valid JSON from malformed content: {content}")
+                        print("WARNING: Chairperson returned malformed JSON that could not be recovered.")
                         return {
                             "executive_summary": "Chair synthesis failed due to malformed JSON output from LLM.",
                             "final_recommendation": "Challenged",
@@ -62,7 +62,7 @@ class ChairpersonAgent(BaseAgent):
                             "required_revisions": [],
                         }
                 else:
-                    print(f"DEBUG: No valid JSON structure found in content: {content}")
+                    print("WARNING: Chairperson response did not contain a parseable JSON object.")
                     return {
                         "executive_summary": "Chair synthesis failed due to no valid JSON structure from LLM.",
                         "final_recommendation": "Challenged",

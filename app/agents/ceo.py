@@ -54,10 +54,10 @@ class CEOAgent(BaseAgent):
                         extracted_json_str = content[start_index : end_index + 1]
                         parsed = json.loads(extracted_json_str)
                     except json.JSONDecodeError:
-                        print(f"DEBUG: Could not extract valid JSON from malformed content: {content}")
+                        print("WARNING: CEO returned malformed JSON that could not be recovered.")
                         return self._placeholder_output("CEO JSON parsing failed after extraction attempt.")
                 else:
-                    print(f"DEBUG: No valid JSON structure found in content: {content}")
+                    print("WARNING: CEO response did not contain a parseable JSON object.")
                     return self._placeholder_output("CEO output had no parseable JSON object.")
             
             parsed["agent"] = self.name

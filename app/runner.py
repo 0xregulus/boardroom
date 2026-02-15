@@ -2,21 +2,19 @@ from __future__ import annotations
 
 import os
 import sys
-import uuid
 from pathlib import Path
-from typing import Any
 
 from dotenv import load_dotenv
 from notion_client import Client
-from openai import OpenAI # Added OpenAI import
+from openai import OpenAI
 
 # Ensure the app directory is in the sys.path for imports
 ROOT = Path(__file__).resolve().parent
 if str(ROOT.parent) not in sys.path:
     sys.path.append(str(ROOT.parent))
 
-from app.workflow.decision_workflow import BoardroomDecisionWorkflow, _get_notion_db_id # Added _get_notion_db_id # noqa: E402
-from app.notion.strategic_decisions_repo import StrategicDecisionsRepo # Added StrategicDecisionsRepo # noqa: E402
+from app.notion.strategic_decisions_repo import StrategicDecisionsRepo  # noqa: E402
+from app.workflow.decision_workflow import BoardroomDecisionWorkflow, _get_notion_db_id  # noqa: E402
 
 
 def _load_notion_client() -> Client:
@@ -26,7 +24,7 @@ def _load_notion_client() -> Client:
         raise SystemExit("NOTION_API_KEY missing in .env")
     return Client(auth=api_key)
 
-def _require_openai() -> OpenAI: # Added _require_openai function
+def _require_openai() -> OpenAI:
     load_dotenv(".env")
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -41,7 +39,7 @@ def main() -> int:
     artifacts_root.mkdir(parents=True, exist_ok=True)
 
     notion_client = _load_notion_client()
-    openai_client = _require_openai() # Initialize OpenAI client
+    openai_client = _require_openai()
 
     # Get the strategic decisions database ID
     strategic_decisions_db_id = _get_notion_db_id("NOTION_STRATEGIC_DECISIONS_DB_ID")
@@ -63,7 +61,7 @@ def main() -> int:
 
         print(f"\n--- Processing Decision: {decision_name} ({decision_id}) ---")
 
-        workflow = BoardroomDecisionWorkflow(artifacts_root=artifacts_root, notion_client=notion_client, openai_client=openai_client) # Pass openai_client
+        workflow = BoardroomDecisionWorkflow(artifacts_root=artifacts_root, notion_client=notion_client, openai_client=openai_client)
 
         # Pass empty dummy inputs, as the workflow will fetch actual data from Notion
         final_state = workflow.run(
