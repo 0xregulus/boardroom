@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import uuid
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
@@ -145,10 +146,59 @@ PRD_SECTION_DEFAULTS = {
     "Notes": "Assumptions, pending decisions, and implementation notes.",
 }
 
+LABEL_ONLY_PHRASES = {
+    "objective supported",
+    "kpi impact",
+    "cost of inaction",
+    "clear problem statement",
+    "root cause",
+    "affected segment",
+    "quantified impact",
+    "chosen option",
+    "trade-offs",
+    "trade offs",
+    "primary metric",
+    "leading indicators",
+    "review cadence",
+    "criteria",
+    "revenue impact (12m)",
+    "cost impact",
+    "margin effect",
+    "payback period",
+    "confidence level",
+    "risk",
+    "impact",
+    "probability",
+    "mitigation",
+    "we will stop or pivot if",
+}
+
 
 def _clean_line(text: str, max_len: int = 260) -> str:
-    normalized = " ".join(text.replace("\t", " ").split()).strip(" -•")
-    return normalized[:max_len].strip()
+    normalized = text.replace("**", "").replace("`", "")
+    normalized = " ".join(normalized.replace("\t", " ").split()).strip(" -•")
+    trimmed = normalized[:max_len].strip()
+    lower_trimmed = trimmed.lower().rstrip(":")
+    if lower_trimmed in {"", "+", "|", "-", "chosen option", "trade-offs", "trade offs"}:
+        return ""
+    return trimmed
+
+
+def _is_label_only_line(line: str) -> bool:
+    normalized = _clean_line(line, max_len=260).lower().strip()
+    if not normalized:
+        return True
+    if normalized in LABEL_ONLY_PHRASES:
+        return True
+    if normalized.endswith(":"):
+        core = normalized[:-1].strip()
+        if not core:
+            return True
+        if core in LABEL_ONLY_PHRASES:
+            return True
+        if len(core.split()) <= 4:
+            return True
+    return False
 
 
 def _dedupe_keep_order(lines: list[str], limit: int = 8) -> list[str]:
@@ -166,6 +216,56 @@ def _dedupe_keep_order(lines: list[str], limit: int = 8) -> list[str]:
         if len(out) >= limit:
             break
     return out
+
+
+def _normalize_similarity_text(text: str) -> str:
+    normalized = text.lower()
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(
+        r"\b(a|an|the|to|for|of|and|or|with|all|ensure|perform|conduct|develop|comprehensive|thorough|potential|required)\b",
+        " ",
+        normalized,
+    )
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _dedupe_semantic(lines: list[str], limit: int = 8, similarity: float = 0.86) -> list[str]:
+    out: list[str] = []
+    normalized_out: list[str] = []
+    for line in lines:
+        cleaned = _clean_line(line)
+        if not cleaned:
+            continue
+        normalized = _normalize_similarity_text(cleaned)
+        if not normalized:
+            normalized = cleaned.lower()
+        duplicate = False
+        for prior in normalized_out:
+            if normalized == prior:
+                duplicate = True
+                break
+            if SequenceMatcher(None, normalized, prior).ratio() >= similarity:
+                duplicate = True
+                break
+        if duplicate:
+            continue
+        out.append(cleaned)
+        normalized_out.append(normalized)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _requirement_topic_key(text: str) -> str:
+    lowered = text.lower()
+    if "downside model" in lowered or "downside modeling" in lowered:
+        return "downside_modeling"
+    if "compliance review" in lowered:
+        return "compliance_review"
+    if "risk matrix" in lowered:
+        return "risk_matrix"
+    return ""
 
 
 def _property_value(properties: dict[str, Any], name: str) -> str:
@@ -237,15 +337,25 @@ def _section_lines(text: str, max_lines: int = 6) -> list[str]:
     lines = [_clean_line(line) for line in text.splitlines() if _clean_line(line)]
     if len(lines) <= 1 and lines:
         lines = [_clean_line(p) for p in re.split(r"(?<=[.!?])\s+", lines[0]) if _clean_line(p)]
+    lines = [line for line in lines if not _is_label_only_line(line)]
     return _dedupe_keep_order(lines, limit=max_lines)
 
 
 def _reviews_required_changes(reviews: dict[str, ReviewOutput], limit: int = 6) -> list[str]:
     lines: list[str] = []
+    seen_topics: set[str] = set()
     for review in reviews.values():
         for change in review.required_changes:
-            lines.append(change)
-    return _dedupe_keep_order(lines, limit=limit)
+            cleaned = _clean_line(change)
+            if not cleaned:
+                continue
+            topic_key = _requirement_topic_key(cleaned)
+            if topic_key and topic_key in seen_topics:
+                continue
+            if topic_key:
+                seen_topics.add(topic_key)
+            lines.append(cleaned)
+    return _dedupe_semantic(lines, limit=limit)
 
 
 def _reviews_risk_evidence(reviews: dict[str, ReviewOutput], limit: int = 6) -> list[str]:
@@ -254,6 +364,43 @@ def _reviews_risk_evidence(reviews: dict[str, ReviewOutput], limit: int = 6) -> 
         for risk in review.risks:
             lines.append(f"{risk.type}: {risk.evidence}")
     return _dedupe_keep_order(lines, limit=limit)
+
+
+def _final_decision_requirements(final_decision_text: str) -> list[str]:
+    if not final_decision_text:
+        return []
+
+    clean_text = final_decision_text.replace("**", "")
+    requirements: list[str] = []
+
+    option_matches = re.findall(r"Option\s+([A-Za-z0-9]+)\s*\(([^)]+)\)", clean_text)
+    if option_matches:
+        option_descriptions = [f"Option {label} ({name.strip()})" for label, name in option_matches]
+        option_descriptions = _dedupe_keep_order(option_descriptions, limit=4)
+        if len(option_descriptions) == 1:
+            requirements.append(f"Implement {option_descriptions[0]} as the selected approach.")
+        else:
+            joined = " + ".join(option_descriptions[:3])
+            requirements.append(f"Implement a phased rollout combining {joined}.")
+
+    for line in _section_lines(clean_text, max_lines=12):
+        lower_line = line.lower().rstrip(":")
+        if lower_line in {"chosen option", "trade-offs", "trade offs"}:
+            continue
+        if lower_line in {"combine", "+"}:
+            continue
+        if line.lower().startswith("option "):
+            continue
+        if option_matches and "combine option" in lower_line:
+            continue
+        if "trade-off" in lower_line or "trade off" in lower_line:
+            continue
+        if line.startswith("Prioritize ") or line.startswith("Focus "):
+            requirements.append(f"Trade-off guardrail: {line.rstrip('.')}.")
+        elif "phased rollout" in lower_line and "option" in lower_line:
+            requirements.append(line.rstrip("."))
+
+    return _dedupe_semantic(requirements, limit=5, similarity=0.8)
 
 
 def _build_prd_output(state: GraphState) -> PRDOutput:
@@ -308,15 +455,11 @@ def _build_prd_output(state: GraphState) -> PRDOutput:
     background = _dedupe_keep_order(background, limit=8)
 
     research: list[str] = []
-    for label, section_text in [
-        ("Problem framing", problem_framing),
-        ("Options evaluated", options_evaluated),
-        ("Financial model", financial_model),
-        ("Risk matrix", risk_matrix),
-    ]:
-        for line in _section_lines(section_text, max_lines=3):
-            research.append(f"{label}: {line}")
-    research = _dedupe_keep_order(research, limit=10)
+    research.extend(_section_lines(problem_framing, max_lines=5))
+    research.extend(_section_lines(options_evaluated, max_lines=5))
+    research.extend(_section_lines(financial_model, max_lines=4))
+    research.extend(_section_lines(risk_matrix, max_lines=4))
+    research = _dedupe_semantic(research, limit=10, similarity=0.88)
 
     user_stories: list[str] = []
     if "mobile" in body_lower:
@@ -330,17 +473,22 @@ def _build_prd_output(state: GraphState) -> PRDOutput:
     user_stories = _dedupe_keep_order(user_stories, limit=5)
 
     requirements: list[str] = []
-    for line in _section_lines(final_decision, max_lines=4):
-        requirements.append(f"Decision requirement: {line}")
-    for change in _reviews_required_changes(reviews, limit=4):
-        requirements.append(f"Executive requirement: {change}")
-    requirements = _dedupe_keep_order(requirements, limit=8)
+    requirements.extend(_final_decision_requirements(final_decision))
+    requirements.extend(_reviews_required_changes(reviews, limit=5))
+    requirements = _dedupe_semantic(requirements, limit=8)
 
     telemetry: list[str] = []
     if primary_kpi:
         telemetry.append(f"Primary metric: {primary_kpi}.")
-    telemetry.extend(_section_lines(monitoring_plan, max_lines=6))
-    telemetry = _dedupe_keep_order(telemetry, limit=8)
+    primary_metric_norm = _normalize_similarity_text(primary_kpi) if primary_kpi else ""
+    for line in _section_lines(monitoring_plan, max_lines=8):
+        norm = _normalize_similarity_text(line)
+        if line.lower().startswith("primary metric"):
+            continue
+        if primary_metric_norm and (norm == primary_metric_norm or primary_metric_norm in norm or norm in primary_metric_norm):
+            continue
+        telemetry.append(line)
+    telemetry = _dedupe_semantic(telemetry, limit=8, similarity=0.88)
 
     ux_ui_design: list[str] = []
     if "mobile" in body_lower:
@@ -359,8 +507,8 @@ def _build_prd_output(state: GraphState) -> PRDOutput:
     if time_horizon:
         experiment.append(f"Experiment horizon: {time_horizon}.")
     for line in _section_lines(kill_criteria, max_lines=4):
-        experiment.append(f"Kill criterion: {line}")
-    experiment = _dedupe_keep_order(experiment, limit=8)
+        experiment.append(line)
+    experiment = _dedupe_semantic(experiment, limit=8, similarity=0.88)
 
     qa: list[str] = []
     for blocker in synthesis.get("blockers", []):
