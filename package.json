@@ -1,0 +1,39 @@
+{
+  "name": "boardroom-next",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "workflow": "tsx src/runner.ts",
+    "db:seed": "tsx scripts/seed_postgres.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "next": "^15.1.0",
+    "openai": "^4.77.3",
+    "pg": "^8.18.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.16.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.18"
+  }
+}

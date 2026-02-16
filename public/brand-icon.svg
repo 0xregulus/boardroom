@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="brand-bg" x1="16" y1="10" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#09174A" />
+      <stop offset="0.58" stop-color="#0A2D7E" />
+      <stop offset="1" stop-color="#08102D" />
+    </linearGradient>
+    <radialGradient id="brand-core" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(64 64) rotate(90) scale(30)">
+      <stop stop-color="#38E8FF" stop-opacity="0.45" />
+      <stop offset="1" stop-color="#38E8FF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="brand-ring" x1="31" y1="28" x2="99" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#73F1FF" />
+      <stop offset="1" stop-color="#5A8DFF" />
+    </linearGradient>
+    <linearGradient id="brand-arrow" x1="37" y1="82" x2="96" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38F0FF" />
+      <stop offset="0.55" stop-color="#5CD0FF" />
+      <stop offset="1" stop-color="#6B88FF" />
+    </linearGradient>
+    <linearGradient id="brand-gold" x1="55" y1="36" x2="74" y2="78" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFEAB4" />
+      <stop offset="0.6" stop-color="#F6BE67" />
+      <stop offset="1" stop-color="#D18B3D" />
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#brand-bg)" />
+
+  <g opacity="0.22" stroke="#6FC8FF" stroke-width="1.6" stroke-linecap="round">
+    <path d="M18 30 44 18 64 28 89 16 110 34" />
+    <path d="M15 56 36 46 58 52 80 44 112 58" />
+    <path d="M17 84 42 72 60 80 88 70 111 86" />
+    <path d="M19 102 45 92 64 100 88 90 108 104" />
+  </g>
+
+  <g fill="#82D8FF" opacity="0.34">
+    <circle cx="44" cy="18" r="1.8" />
+    <circle cx="64" cy="28" r="1.8" />
+    <circle cx="89" cy="16" r="1.8" />
+    <circle cx="58" cy="52" r="1.8" />
+    <circle cx="88" cy="70" r="1.8" />
+    <circle cx="45" cy="92" r="1.8" />
+  </g>
+
+  <circle cx="64" cy="64" r="36" stroke="url(#brand-ring)" stroke-width="5.5" />
+  <circle cx="64" cy="64" r="31" stroke="#67E6FF" stroke-opacity="0.28" />
+  <circle cx="64" cy="64" r="24.5" fill="url(#brand-core)" />
+
+  <g stroke="#61DFFF" stroke-width="2.4" stroke-linecap="round" opacity="0.84">
+    <path d="M38 89v19" />
+    <path d="M48 86v22" />
+    <path d="M58 84v24" />
+    <path d="M70 84v24" />
+    <path d="M80 86v22" />
+    <path d="M90 89v19" />
+  </g>
+
+  <g>
+    <path
+      d="M64 40 60.4 46.4h-4.2l3.8 5.6-2.6 16.2h12.6L67.4 52l3.8-5.6H67L64 40Z"
+      fill="url(#brand-gold)"
+      stroke="#F7DCAB"
+      stroke-width="1.2"
+      stroke-linejoin="round"
+    />
+    <path d="M64 34v6M61 37h6" stroke="#FBE9C2" stroke-width="2" stroke-linecap="round" />
+    <rect x="54.8" y="68.2" width="18.4" height="5.4" rx="2.2" fill="url(#brand-gold)" />
+    <rect x="52.8" y="73.8" width="22.4" height="4.8" rx="2.4" fill="#D09043" />
+  </g>
+
+  <g>
+    <circle cx="47" cy="54" r="7.4" fill="#FFDE85" stroke="#FFEEC4" stroke-width="1.7" />
+    <rect x="44.4" y="60.2" width="5.2" height="4.7" rx="1.8" fill="#C9D8FF" />
+    <path d="M45.4 64.1h3.2" stroke="#8EA1D8" stroke-width="1.2" stroke-linecap="round" />
+    <path d="M45 54.2c0-1.2.9-2.2 2-2.2s2 .9 2 2.2c0 .7-.4 1.4-.9 1.8h-2.1c-.5-.4-1-.9-1-1.8Z" stroke="#C48C34" stroke-width="1.1" stroke-linejoin="round" />
+  </g>
+
+  <path d="M37 82 54 65 62 73 86 49" stroke="#0B2360" stroke-width="9.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.22" />
+  <path d="M37 82 54 65 62 73 86 49" stroke="url(#brand-arrow)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="m85.8 49.2-3.2 13.8 14.2-2.8-11-11Z" fill="url(#brand-arrow)" />
+</svg>

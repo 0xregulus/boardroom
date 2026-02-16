@@ -1,82 +1,66 @@
-# Boardroom Architecture
+# Boardroom Architecture (Next.js + PostgreSQL)
 
-## Core Components
+## Core Flow
 
-1. Decision Intake
-- Source: Notion Strategic Decisions database.
-- The workflow reads one `Proposed` decision page and its page body.
+1. `build_decision`
+- Fetch decision metadata + body text from PostgreSQL (`decisions`, `decision_documents`).
+- Infer governance gates from text.
+- Auto-mark inferred governance checks in `decision_governance_checks`.
+- Move decision status to `Under Evaluation` or `Incomplete`.
 
-2. Executive Review Agents
-- Files: `app/agents/ceo.py`, `app/agents/cfo.py`, `app/agents/cto.py`, `app/agents/compliance.py`
-- Each agent returns structured JSON mapped to `ReviewOutput`.
-- Current execution order is sequential inside one workflow node.
+2. `executive_review`
+- Run normalized review-agent configs (core agents plus optional custom reviewers).
+- Agent runtime config (provider/model/system/user/temperature/max tokens) comes from `agent_configs`, with defaults when no persisted config exists.
+- Each agent uses its configured provider client (`OpenAI`, `Anthropic`, `Mistral`, `Meta`).
+- Prompt templates are configurable per agent; prompt markdown in `src/prompts/*_v3.md` is used as a fallback.
+- When `TAVILY_API_KEY` is configured and `includeExternalResearch` is `true` (default), each review agent runs a Tavily search and receives recent external evidence with source URLs in prompt context.
+- LLM output is parsed via JSON fallback extraction and validated with Zod.
 
-3. Chairperson Synthesis
-- File: `app/agents/chairperson.py`
-- Synthesizes executive reviews into:
-  - `executive_summary`
-  - `final_recommendation` (`Approved|Challenged|Blocked`)
-  - `conflicts`, `blockers`, `required_revisions`
+3. `synthesize_reviews`
+- Chairperson agent produces executive summary and final recommendation.
 
-4. PRD Builder
-- File: `app/workflow/decision_workflow.py` (`_build_prd_output`, `_prd_children`)
-- Produces structured `PRDOutput` and renders a Notion-friendly PRD page body.
-
-## Orchestration
-
-- File: `app/workflow/decision_workflow.py`
-- Runtime: LangGraph `StateGraph`
-
-Execution flow:
-1. `build_decision` (fetch Notion page + infer governance checks)
-2. `executive_review` (CEO/CFO/CTO/Compliance)
-3. `synthesize_reviews` (Chairperson)
 4. `calculate_dqs`
-5. gate:
-   - `approved` -> `generate_prd`
-   - `revision_required` -> `persist_artifacts`
-   - `blocked` -> `persist_artifacts`
-6. `persist_artifacts` (Notion upserts for reviews and optional PRD)
+- DQS is a weighted mean over configured review agents:
+  - core weights: `CEO=0.30`, `CFO=0.25`, `CTO=0.25`, `Compliance=0.20`
+  - each additional custom reviewer uses weight `0.20`
+  - `DQS = SUM(score_i * weight_i) / SUM(weight_i)`
 
-## Decision Quality Score
+5. gate decision
+- `Blocked` if any review blocks.
+- `Challenged` if `DQS < 7.0`.
+- `Approved` otherwise.
 
-`DQS = CEO*0.30 + CFO*0.25 + CTO*0.25 + Compliance*0.20`
+6. `generate_prd` (approved only)
+- Build structured PRD sections from decision text + review feedback.
 
-Gate rules:
-- If any executive review is blocked -> `Blocked`
-- Else if `DQS < 7.0` -> `Challenged`
-- Else -> `Approved`
+7. `persist_artifacts`
+- Upsert executive reviews in `decision_reviews`.
+- Upsert chairperson synthesis in `decision_synthesis`.
+- Upsert PRD in `decision_prds` when approved.
+- Append run record in `workflow_runs`.
 
-## Governance Gate Evaluation
+## Runtime Surfaces
 
-- File: `app/workflow/gates.py`
-- Required typed fields:
-  - `Baseline` (number)
-  - `Target` (number)
-  - `Time Horizon` (select)
-- Required boolean gates:
-  - `Strategic Alignment Brief`
-  - `Problem Quantified`
-  - `≥3 Options Evaluated`
-  - `Success Metrics Defined`
-  - `Leading Indicators Defined`
-  - `Kill Criteria Defined`
-- Checks can be satisfied by either:
-  - explicit checkbox properties on the page, or
-  - inferred signals from decision body text.
+- Web UI: `/`
+- API: `POST /api/workflow/run`
+- API: `GET /api/workflow/runs` (decision run history)
+- API: `GET /api/strategies`
+- API: `GET /api/strategies/:decisionId`
+- API: `GET|PUT /api/agent-configs`
+- API: `GET /api/health`
+- CLI: `npm run workflow`
 
-## Notion Data Integration
+## Main Code
 
-- `app/notion/strategic_decisions_repo.py`
-  - Lists `Proposed` decisions with pagination.
-  - Supports both `status` and `select` Notion property variants for `Status`.
-- `app/workflow/decision_workflow.py`
-  - Updates decision status safely for both `status` and `select` schemas.
-  - Upserts executive reviews using stable key: `"{decision_page_id}:{agent_name}"`.
-  - Creates/updates PRD page by title: `PRD - {decision_name}`.
+- `src/workflow/decision_workflow.ts` orchestration
+- `src/config/agent_config.ts` normalized/persisted agent config model
+- `src/config/llm_providers.ts` provider/model/env-key registry
+- `src/llm/client.ts` provider client implementations
+- `src/agents/base.ts` agent execution + parsing
+- `src/workflow/prd.ts` PRD synthesis helpers
+- `src/workflow/gates.ts` governance checks
+- `src/store/postgres.ts` PostgreSQL schema + repository functions
 
-## Schemas
+## Legacy Archive
 
-- `app/schemas/review_output.py`: executive review contract.
-- `app/schemas/prd_output.py`: PRD contract.
-- `app/schemas/decision_snapshot.py`: decision snapshot contract passed through workflow.
+- No archived legacy implementation directory is currently tracked in this repository root.

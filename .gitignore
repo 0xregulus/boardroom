@@ -4,3 +4,10 @@ __pycache__/
 .env
 .env.*
 .pytest_cache/*
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+artifacts/
+coverage/
