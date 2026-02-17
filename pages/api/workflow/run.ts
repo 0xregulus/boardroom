@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { AgentConfig, normalizeAgentConfigs } from "../../../src/config/agent_config";
 import { enforceRateLimit, enforceSensitiveRouteAccess } from "../../../src/security/request_guards";
+import { enforceWorkflowRunPolicy } from "../../../src/security/workflow_policy";
 import { getPersistedAgentConfigs } from "../../../src/store/postgres";
 import { runAllProposedDecisions, runDecisionWorkflow } from "../../../src/workflow/decision_workflow";
 
@@ -11,6 +12,7 @@ interface RunBody {
   modelName?: string;
   temperature?: number;
   maxTokens?: number;
+  interactionRounds?: number;
   agentConfigs?: AgentConfig[];
   includeExternalResearch?: boolean;
   includeSensitive?: boolean;
@@ -34,6 +36,7 @@ const runBodySchema = z
       .optional(),
     temperature: z.number().finite().min(0).max(1).optional(),
     maxTokens: z.number().int().min(256).max(8000).optional(),
+    interactionRounds: z.number().int().min(0).max(3).optional(),
     agentConfigs: z.array(z.unknown()).max(32).optional(),
     includeExternalResearch: z.boolean().optional(),
     includeSensitive: z.boolean().optional(),
@@ -114,11 +117,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (
-    !enforceRateLimit(req, res, {
+    !(await enforceRateLimit(req, res, {
       routeKey: "api/workflow/run",
       limit: 20,
       windowMs: 60_000,
-    })
+    }))
   ) {
     return;
   }
@@ -141,17 +144,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const body = parsedBody.data as RunBody;
+    const decisionId = body.decisionId?.trim();
     const includeExternalResearch = body.includeExternalResearch === true;
     const includeSensitive = body.includeSensitive === true;
+
+    if (
+      !enforceWorkflowRunPolicy(req, res, {
+        hasDecisionId: typeof decisionId === "string" && decisionId.length > 0,
+        includeExternalResearch,
+        includeSensitive,
+      })
+    ) {
+      return;
+    }
+
     const persistedAgentConfigs = Array.isArray(body.agentConfigs) ? null : await getPersistedAgentConfigs();
     const agentConfigs = normalizeAgentConfigs(body.agentConfigs ?? persistedAgentConfigs ?? undefined);
 
-    if (body.decisionId && body.decisionId.trim().length > 0) {
+    if (decisionId && decisionId.length > 0) {
       const state = await runDecisionWorkflow({
-        decisionId: body.decisionId.trim(),
+        decisionId,
         modelName: body.modelName,
         temperature: body.temperature,
         maxTokens: body.maxTokens,
+        interactionRounds: body.interactionRounds,
         agentConfigs,
         includeExternalResearch,
       });
@@ -167,6 +183,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       modelName: body.modelName,
       temperature: body.temperature,
       maxTokens: body.maxTokens,
+      interactionRounds: body.interactionRounds,
       agentConfigs,
       includeExternalResearch,
     });
@@ -177,6 +194,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       results: includeSensitive ? results : results.map((entry) => toWorkflowStatePreview(entry)),
     });
   } catch (error) {
+    if (error instanceof Error && error.message.includes("Bulk run limit exceeded")) {
+      res.status(400).json({
+        error: "Bulk run exceeds configured limit",
+      });
+      return;
+    }
+
     console.error("[api/workflow/run] workflow execution failed", error);
     res.status(500).json({
       error: "Workflow execution failed",

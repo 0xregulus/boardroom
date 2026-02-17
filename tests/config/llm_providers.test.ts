@@ -4,6 +4,7 @@ import {
   getProviderApiKey,
   getProviderApiKeyEnv,
   getProviderBaseUrl,
+  providerFailoverOrder,
   providerOptions,
   resolveModelForProvider,
   resolveProvider,
@@ -19,6 +20,11 @@ afterEach(() => {
 describe("llm_providers", () => {
   it("returns all provider options", () => {
     expect(providerOptions()).toEqual(["OpenAI", "Anthropic", "Mistral", "Meta"]);
+  });
+
+  it("returns deterministic provider failover order", () => {
+    expect(providerFailoverOrder("OpenAI")).toEqual(["OpenAI", "Anthropic", "Mistral", "Meta"]);
+    expect(providerFailoverOrder("Anthropic")).toEqual(["Anthropic", "OpenAI", "Mistral", "Meta"]);
   });
 
   it("resolves provider names with fallback", () => {

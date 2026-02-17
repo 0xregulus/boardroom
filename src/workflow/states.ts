@@ -11,6 +11,22 @@ export interface ChairpersonSynthesis {
   required_revisions: string[];
 }
 
+export interface AgentInteractionDelta {
+  agent_id: string;
+  agent_name: string;
+  previous_score: number;
+  revised_score: number;
+  score_delta: number;
+  previous_blocked: boolean;
+  revised_blocked: boolean;
+}
+
+export interface AgentInteractionRound {
+  round: number;
+  summary: string;
+  deltas: AgentInteractionDelta[];
+}
+
 export interface WorkflowState {
   decision_id: string;
   user_context: Record<string, unknown>;
@@ -24,6 +40,7 @@ export interface WorkflowState {
   prd: PRDOutput | null;
   missing_sections: string[];
   decision_name: string;
+  interaction_rounds: AgentInteractionRound[];
 }
 
 export interface RunWorkflowOptions {
@@ -36,4 +53,5 @@ export interface RunWorkflowOptions {
   maxTokens?: number;
   agentConfigs?: AgentConfig[];
   includeExternalResearch?: boolean;
+  interactionRounds?: number;
 }

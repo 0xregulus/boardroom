@@ -1,60 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "../../src/config/agent_config";
 
+function makeReviewOutput(agent: string) {
+  return {
+    agent,
+    thesis: `${agent} review`,
+    score: 8,
+    confidence: 0.8,
+    blocked: false,
+    blockers: [],
+    risks: [],
+    required_changes: [],
+    approval_conditions: [],
+    apga_impact_view: "Positive",
+    governance_checks_met: {},
+  };
+}
+
+function interactionRoundContexts(entries: unknown[]): unknown[] {
+  return entries.filter((entry) => {
+    const memory = (entry as { memory_context?: Record<string, unknown> })?.memory_context;
+    return typeof memory?.interaction_round === "number";
+  });
+}
+
 const workflowMockState = vi.hoisted(() => ({
   reviewOutputs: {
-    CEO: {
-      agent: "CEO",
-      thesis: "CEO review",
-      score: 8,
-      confidence: 0.8,
-      blocked: false,
-      blockers: [],
-      risks: [],
-      required_changes: [],
-      approval_conditions: [],
-      apga_impact_view: "Positive",
-      governance_checks_met: {},
-    },
-    CFO: {
-      agent: "CFO",
-      thesis: "CFO review",
-      score: 8,
-      confidence: 0.8,
-      blocked: false,
-      blockers: [],
-      risks: [],
-      required_changes: [],
-      approval_conditions: [],
-      apga_impact_view: "Positive",
-      governance_checks_met: {},
-    },
-    CTO: {
-      agent: "CTO",
-      thesis: "CTO review",
-      score: 8,
-      confidence: 0.8,
-      blocked: false,
-      blockers: [],
-      risks: [],
-      required_changes: [],
-      approval_conditions: [],
-      apga_impact_view: "Positive",
-      governance_checks_met: {},
-    },
-    compliance: {
-      agent: "Compliance",
-      thesis: "Compliance review",
-      score: 8,
-      confidence: 0.8,
-      blocked: false,
-      blockers: [],
-      risks: [],
-      required_changes: [],
-      approval_conditions: [],
-      apga_impact_view: "Positive",
-      governance_checks_met: {},
-    },
+    CEO: makeReviewOutput("CEO"),
+    CFO: makeReviewOutput("CFO"),
+    CTO: makeReviewOutput("CTO"),
+    compliance: makeReviewOutput("Compliance"),
   } as Record<string, any>,
   synthesis: {
     executive_summary: "Synthesis",
@@ -73,6 +48,8 @@ const workflowMockState = vi.hoisted(() => ({
   }>,
   reviewAgentRuntimeParams: [] as Array<{ temperature?: number; maxTokens?: number }>,
   complianceAgentRuntimeParams: [] as Array<{ temperature?: number; maxTokens?: number }>,
+  reviewAgentContexts: [] as Array<unknown>,
+  complianceAgentContexts: [] as Array<unknown>,
 }));
 
 const storeMocks = vi.hoisted(() => ({
@@ -166,7 +143,7 @@ vi.mock("../../src/config/llm_providers", () => ({
 
 vi.mock("../../src/llm/client", () => ({
   ProviderClientRegistry: class {
-    getClient(provider: string) {
+    getResilientClient(provider: string) {
       return { provider, complete: vi.fn() };
     }
   },
@@ -202,7 +179,8 @@ vi.mock("../../src/agents/base", () => ({
       workflowMockState.reviewAgentRuntimeParams.push({ temperature, maxTokens });
     }
 
-    async evaluate() {
+    async evaluate(context?: unknown) {
+      workflowMockState.reviewAgentContexts.push(context);
       return workflowMockState.reviewOutputs[this.role];
     }
   },
@@ -218,7 +196,8 @@ vi.mock("../../src/agents/base", () => ({
       workflowMockState.complianceAgentRuntimeParams.push({ temperature, maxTokens });
     }
 
-    async evaluate() {
+    async evaluate(context?: unknown) {
+      workflowMockState.complianceAgentContexts.push(context);
       return workflowMockState.reviewOutputs.compliance;
     }
   },
@@ -263,6 +242,7 @@ function makeDecision(id: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.BOARDROOM_MAX_BULK_RUN_DECISIONS;
 
   const cloneDefaults = () => agentConfigMocks.defaults.map((config) => ({ ...config }));
   agentConfigMocks.normalizeAgentConfigs.mockImplementation(cloneDefaults);
@@ -298,6 +278,8 @@ beforeEach(() => {
   workflowMockState.complianceAgentRuntimeOptions = [];
   workflowMockState.reviewAgentRuntimeParams = [];
   workflowMockState.complianceAgentRuntimeParams = [];
+  workflowMockState.reviewAgentContexts = [];
+  workflowMockState.complianceAgentContexts = [];
 });
 
 describe("runDecisionWorkflow", () => {
@@ -356,6 +338,39 @@ describe("runDecisionWorkflow", () => {
     );
   });
 
+  it("runs one interaction round by default and records context", async () => {
+    const state = await runDecisionWorkflow({ decisionId: "d1" });
+
+    expect(state.interaction_rounds).toHaveLength(1);
+    expect(state.interaction_rounds[0]).toMatchObject({
+      round: 1,
+      deltas: [],
+    });
+
+    const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
+    const interactionContexts = interactionRoundContexts(allContexts);
+
+    expect(interactionContexts).toHaveLength(4);
+  });
+
+  it("supports disabling interaction rounds", async () => {
+    const state = await runDecisionWorkflow({ decisionId: "d1", interactionRounds: 0 });
+
+    expect(state.interaction_rounds).toEqual([]);
+    const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
+    const interactionContexts = interactionRoundContexts(allContexts);
+    expect(interactionContexts).toHaveLength(0);
+  });
+
+  it("clamps interaction rounds to upper bound", async () => {
+    const state = await runDecisionWorkflow({ decisionId: "d1", interactionRounds: 99 });
+
+    expect(state.interaction_rounds).toHaveLength(3);
+    const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
+    const interactionContexts = interactionRoundContexts(allContexts);
+    expect(interactionContexts).toHaveLength(12);
+  });
+
   it("disables external research by default", async () => {
     await runDecisionWorkflow({ decisionId: "d1" });
 
@@ -366,9 +381,12 @@ describe("runDecisionWorkflow", () => {
         expect.objectContaining({ includeExternalResearch: false }),
       ]),
     );
-    expect(workflowMockState.complianceAgentRuntimeOptions).toEqual([
-      expect.objectContaining({ includeExternalResearch: false }),
-    ]);
+    expect(workflowMockState.complianceAgentRuntimeOptions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ includeExternalResearch: false })]),
+    );
+    expect(workflowMockState.complianceAgentRuntimeOptions.every((entry) => entry.includeExternalResearch === false)).toBe(
+      true,
+    );
   });
 
   it("enables external research when includeExternalResearch=true", async () => {
@@ -381,9 +399,12 @@ describe("runDecisionWorkflow", () => {
         expect.objectContaining({ includeExternalResearch: true }),
       ]),
     );
-    expect(workflowMockState.complianceAgentRuntimeOptions).toEqual([
-      expect.objectContaining({ includeExternalResearch: true }),
-    ]);
+    expect(workflowMockState.complianceAgentRuntimeOptions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ includeExternalResearch: true })]),
+    );
+    expect(workflowMockState.complianceAgentRuntimeOptions.every((entry) => entry.includeExternalResearch === true)).toBe(
+      true,
+    );
   });
 
   it("does not pass promptOverride when provided configs match defaults", async () => {
@@ -428,9 +449,11 @@ describe("runDecisionWorkflow", () => {
         expect.objectContaining({ temperature: 0, maxTokens: 8000 }),
       ]),
     );
-    expect(workflowMockState.complianceAgentRuntimeParams).toEqual([
-      expect.objectContaining({ temperature: 0, maxTokens: 8000 }),
-    ]);
+    expect(workflowMockState.complianceAgentRuntimeParams).toEqual(
+      expect.arrayContaining([expect.objectContaining({ temperature: 0, maxTokens: 8000 })]),
+    );
+    expect(workflowMockState.complianceAgentRuntimeParams.every((entry) => entry.temperature === 0)).toBe(true);
+    expect(workflowMockState.complianceAgentRuntimeParams.every((entry) => entry.maxTokens === 8000)).toBe(true);
   });
 });
 
@@ -446,5 +469,12 @@ describe("runAllProposedDecisions", () => {
     expect(states[0]?.decision_id).toBe("d1");
     expect(states[1]?.decision_id).toBe("d2");
     expect(storeMocks.recordWorkflowRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws when proposed decision count exceeds configured bulk limit", async () => {
+    process.env.BOARDROOM_MAX_BULK_RUN_DECISIONS = "1";
+
+    await expect(runAllProposedDecisions()).rejects.toThrow("Bulk run limit exceeded");
+    expect(storeMocks.recordWorkflowRun).not.toHaveBeenCalled();
   });
 });

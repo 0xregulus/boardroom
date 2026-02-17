@@ -1,121 +1,40 @@
 # Boardroom
 
-This repository runs as a **Next.js + TypeScript** project.
+## Purpose
+Boardroom is a multi-agent strategic decision workflow. It evaluates one decision artifact with executive reviewers, synthesizes trade-offs, computes a Decision Quality Score (DQS), and gates the decision into `Approved`, `Challenged`, or `Blocked`.
 
-It executes a multi-agent boardroom workflow that:
-1. Pulls proposed strategic decisions from PostgreSQL.
-2. Runs configurable executive reviews (default: CEO/CFO/CTO/Compliance, plus optional custom reviewers) with provider-specific LLM clients (OpenAI, Anthropic, Mistral, Meta).
-3. Synthesizes with a Chairperson summary.
-4. Computes DQS and applies the approval gate.
-5. Persists reviews, synthesis, PRDs, and run history in PostgreSQL.
+## General Usage
+1. Configure environment variables from `.env.example`.
+2. Load strategic decisions into PostgreSQL.
+3. Start the app with `npm run dev`.
+4. Run the workflow from the web UI (`/`) or via `POST /api/workflow/run`.
 
-## Stack
+## Strategic Decision Artifact Creation
+A workflow input artifact is persisted in PostgreSQL and consists of:
+- `decisions`: decision metadata (`id`, `name`, `status`, and supporting fields).
+- `decision_documents`: long-form decision body text used by reviewers.
+- `decision_governance_checks`: optional pre-marked governance gates.
 
-- Next.js (Pages Router)
-- TypeScript
-- OpenAI Node SDK + provider HTTP clients
-- PostgreSQL (`pg`)
-- Zod
+How to create artifacts:
+1. Seed sample artifacts: `npm run db:seed -- --reset`.
+2. Or insert/upsert your own records through your ingestion flow into `decisions` + `decision_documents`.
 
-## Project Structure
+Note: the in-app "Create Strategy" stage currently builds local draft artifacts for editing and does not persist new strategy records to PostgreSQL.
 
-- `src/agents/*` executive and chairperson agents
-- `src/config/llm_providers.ts` provider/model/api-key registry
-- `src/config/agent_config.ts` default/normalized agent configuration model
-- `src/llm/client.ts` provider-agnostic LLM client layer
-- `src/store/postgres.ts` PostgreSQL schema + repository helpers
-- `src/schemas/*` workflow contracts and validation
-- `src/workflow/*` orchestration, gates, states, PRD builder
-- `src/prompts/*` agent prompt templates
-- `src/runner.ts` CLI entrypoint
+## Workflow Steps
+1. Build decision context from stored metadata, document text, and inferred governance checks.
+2. Run executive review agents (core agents plus optional custom agents).
+3. Run optional cross-agent interaction rounds (`0..3`) to refine reviews.
+4. Generate chairperson synthesis.
+5. Compute DQS from weighted review scores.
+6. Apply gate decision (`Approved`, `Challenged`, or `Blocked`).
+7. Generate PRD output for approved decisions.
+8. Persist reviews, synthesis, PRD (if approved), and workflow run history.
 
-## Setup
-
-Create a `.env` file:
-
-```bash
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-MISTRAL_API_KEY=
-META_API_KEY=
-POSTGRES_URL=
-```
-
-Optional:
-
-```bash
-BOARDROOM_PROVIDER=OpenAI
-BOARDROOM_MODEL=gpt-4o-mini
-MISTRAL_BASE_URL=
-META_BASE_URL=
-TAVILY_API_KEY=
-```
-
-When `TAVILY_API_KEY` is set, executive review agents automatically run a Tavily web-research pass and receive cited external snippets in their prompt context.
-
-## Install
-
-```bash
-npm install
-```
-
-## Database Schema
-
-The app automatically initializes required tables on first DB access from `src/store/postgres.ts`.
-
-Core tables:
-- `decisions`
-- `decision_documents`
-- `decision_governance_checks`
-- `decision_reviews`
-- `decision_synthesis`
-- `decision_prds`
-- `workflow_runs`
-- `agent_configs`
-
-## Run (Web)
-
-```bash
-npm run dev
-```
-
-Open `http://localhost:3000` and run either:
-- one decision by ID, or
-- all decisions in `Proposed` status.
-
-## Run (CLI)
-
-Single decision:
-
-```bash
-npm run workflow -- --decision-id <DECISION_ID>
-```
-
-All proposed decisions:
-
-```bash
-npm run workflow
-```
-
-## API
-
-- `POST /api/workflow/run`
-  - body with `decisionId` runs a single decision
-  - empty body runs all proposed decisions
-  - body flag `includeExternalResearch` (boolean, default `true`) toggles Tavily research per run
-- `GET /api/workflow/runs?decisionId=<id>&limit=<n>`
-  - returns run history for one decision (limit defaults to `20`, max `100`)
-- `GET /api/strategies`
-  - returns strategy rows from PostgreSQL
-- `GET /api/strategies/:decisionId`
-  - returns one strategy, with resolved artifact sections when available
-- `GET /api/agent-configs`
-  - returns persisted agent configs, or normalized defaults when none are saved
-- `PUT /api/agent-configs`
-  - persists normalized agent configs used by workflow runs
-- `GET /api/health`
-  - checks API and DB connectivity
-
-## Next steps
-- Add vector DB for use previous decisions and reviews as context.
-- Add assitant that help to create the strategic decisions document.
+## Output
+Each run produces:
+- Decision status updates on the source decision.
+- Agent reviews in `decision_reviews` (including chairperson review row).
+- Chairperson synthesis in `decision_synthesis`.
+- PRD output in `decision_prds` when approved.
+- A workflow run record in `workflow_runs` with DQS, gate decision, and state snapshot.

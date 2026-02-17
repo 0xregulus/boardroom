@@ -1,4 +1,4 @@
-export type NodeType = "INPUT" | "STRATEGY" | "REVIEW" | "SYNTHESIS" | "PRD" | "PERSIST";
+export type NodeType = "INPUT" | "STRATEGY" | "REVIEW" | "INTERACTION" | "SYNTHESIS" | "PRD" | "PERSIST";
 export type NodeStatus = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED";
 export type ActiveTab = "editor" | "preview";
 export type WorkspaceView = "dashboard" | "agent-config";
@@ -20,7 +20,13 @@ export interface WorkflowNode {
   subtitle: string;
   position: NodePosition;
   status: NodeStatus;
-  tasks?: string[];
+  tasks?: WorkflowTask[];
+}
+
+export interface WorkflowTask {
+  id: string;
+  title: string;
+  status: NodeStatus;
 }
 
 export interface WorkflowEdge {
@@ -170,6 +176,22 @@ export interface ReportPrd {
   sections: Record<string, string[]>;
 }
 
+export interface ReportInteractionDelta {
+  agent_id: string;
+  agent_name: string;
+  previous_score: number;
+  revised_score: number;
+  score_delta: number;
+  previous_blocked: boolean;
+  revised_blocked: boolean;
+}
+
+export interface ReportInteractionRound {
+  round: number;
+  summary: string;
+  deltas: ReportInteractionDelta[];
+}
+
 export interface ReportDecisionSnapshot {
   properties: Record<string, unknown>;
   excerpt: string;
@@ -185,6 +207,7 @@ export interface ReportWorkflowState {
   run_id?: number;
   run_created_at?: string;
   missing_sections: string[];
+  interaction_rounds?: ReportInteractionRound[];
   reviews: Record<string, ReportReview>;
   synthesis: ReportSynthesis | null;
   prd: ReportPrd | null;

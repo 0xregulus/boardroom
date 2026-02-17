@@ -33,6 +33,7 @@ export const PROVIDER_SETTINGS: Record<LLMProvider, ProviderSettings> = {
 };
 
 const PROVIDERS = Object.freeze(Object.keys(PROVIDER_SETTINGS) as LLMProvider[]);
+const FAILOVER_PRIORITY = Object.freeze<LLMProvider[]>(["OpenAI", "Anthropic", "Mistral", "Meta"]);
 
 export const PROVIDER_MODEL_OPTIONS: Record<LLMProvider, string[]> = PROVIDERS.reduce(
   (acc, provider) => ({
@@ -44,6 +45,10 @@ export const PROVIDER_MODEL_OPTIONS: Record<LLMProvider, string[]> = PROVIDERS.r
 
 export function providerOptions(): LLMProvider[] {
   return [...PROVIDERS];
+}
+
+export function providerFailoverOrder(preferredProvider: LLMProvider): LLMProvider[] {
+  return [preferredProvider, ...FAILOVER_PRIORITY.filter((provider) => provider !== preferredProvider)];
 }
 
 export function resolveProvider(value: unknown): LLMProvider {

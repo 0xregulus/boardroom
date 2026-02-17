@@ -1,6 +1,13 @@
 import OpenAI from "openai";
 
-import { getProviderApiKey, getProviderApiKeyEnv, getProviderBaseUrl, LLMProvider } from "../config/llm_providers";
+import {
+  getProviderApiKey,
+  getProviderApiKeyEnv,
+  getProviderBaseUrl,
+  LLMProvider,
+  providerFailoverOrder,
+  resolveModelForProvider,
+} from "../config/llm_providers";
 
 export interface LLMCompletionRequest {
   model: string;
@@ -62,6 +69,50 @@ function requireProviderBaseUrl(provider: LLMProvider): string {
   }
 
   throw new Error(`${provider} base URL is not configured.`);
+}
+
+const DEFAULT_PROVIDER_COOLDOWN_MS = 20_000;
+const MAX_PROVIDER_COOLDOWN_MS = 5 * 60 * 1_000;
+const COOLDOWN_SIGNALS = [
+  "429",
+  "too many requests",
+  "rate limit",
+  "timeout",
+  "timed out",
+  "temporarily unavailable",
+  "overloaded",
+  "503",
+  "502",
+  "504",
+  "econnreset",
+  "enotfound",
+  "api key is required",
+  "base url is not configured",
+];
+
+function resolveProviderCooldownMs(): number {
+  const raw = Number(process.env.BOARDROOM_PROVIDER_COOLDOWN_MS ?? DEFAULT_PROVIDER_COOLDOWN_MS);
+  if (!Number.isFinite(raw)) {
+    return DEFAULT_PROVIDER_COOLDOWN_MS;
+  }
+
+  return Math.max(1_000, Math.min(MAX_PROVIDER_COOLDOWN_MS, Math.round(raw)));
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "unknown error";
+}
+
+function shouldMarkProviderCooldown(error: unknown): boolean {
+  const normalized = errorMessage(error).toLowerCase();
+  return COOLDOWN_SIGNALS.some((signal) => normalized.includes(signal));
 }
 
 class OpenAIProviderClient implements LLMClient {
@@ -210,8 +261,26 @@ function createProviderClient(provider: LLMProvider): LLMClient {
   return new MetaProviderClient();
 }
 
+class ResilientProviderClient implements LLMClient {
+  readonly provider: LLMProvider;
+
+  private readonly registry: ProviderClientRegistry;
+
+  constructor(provider: LLMProvider, registry: ProviderClientRegistry) {
+    this.provider = provider;
+    this.registry = registry;
+  }
+
+  async complete(request: LLMCompletionRequest): Promise<string> {
+    return this.registry.completeWithFallback(this.provider, request);
+  }
+}
+
 export class ProviderClientRegistry {
   private readonly clients = new Map<LLMProvider, LLMClient>();
+  private readonly resilientClients = new Map<LLMProvider, LLMClient>();
+  private readonly providerCooldownUntil = new Map<LLMProvider, number>();
+  private readonly providerCooldownMs = resolveProviderCooldownMs();
 
   getClient(provider: LLMProvider): LLMClient {
     const existing = this.clients.get(provider);
@@ -222,5 +291,74 @@ export class ProviderClientRegistry {
     const created = createProviderClient(provider);
     this.clients.set(provider, created);
     return created;
+  }
+
+  getResilientClient(provider: LLMProvider): LLMClient {
+    const existing = this.resilientClients.get(provider);
+    if (existing) {
+      return existing;
+    }
+
+    const created = new ResilientProviderClient(provider, this);
+    this.resilientClients.set(provider, created);
+    return created;
+  }
+
+  async completeWithFallback(preferredProvider: LLMProvider, request: LLMCompletionRequest): Promise<string> {
+    const attemptedProviders = this.buildAttemptOrder(preferredProvider);
+    const failures: string[] = [];
+
+    for (const provider of attemptedProviders) {
+      if (getProviderApiKey(provider).length === 0) {
+        failures.push(`${provider}: missing ${getProviderApiKeyEnv(provider)}`);
+        this.markProviderCooldown(provider);
+        continue;
+      }
+
+      const providerModel = resolveModelForProvider(provider, request.model);
+
+      try {
+        const client = this.getClient(provider);
+        const result = await client.complete({
+          ...request,
+          model: providerModel,
+        });
+        this.clearProviderCooldown(provider);
+        return result;
+      } catch (error) {
+        const message = errorMessage(error);
+        failures.push(`${provider}: ${message}`);
+        if (shouldMarkProviderCooldown(error)) {
+          this.markProviderCooldown(provider);
+        }
+      }
+    }
+
+    throw new Error(`All providers failed. Attempts: ${failures.join(" | ")}`);
+  }
+
+  private buildAttemptOrder(preferredProvider: LLMProvider): LLMProvider[] {
+    const ordered = providerFailoverOrder(preferredProvider);
+    const ready = ordered.filter((provider) => !this.isProviderOnCooldown(provider));
+
+    if (ready.length === ordered.length || ready.length === 0) {
+      return ordered;
+    }
+
+    const cooldown = ordered.filter((provider) => this.isProviderOnCooldown(provider));
+    return [...ready, ...cooldown];
+  }
+
+  private isProviderOnCooldown(provider: LLMProvider): boolean {
+    const until = this.providerCooldownUntil.get(provider);
+    return typeof until === "number" && until > Date.now();
+  }
+
+  private markProviderCooldown(provider: LLMProvider): void {
+    this.providerCooldownUntil.set(provider, Date.now() + this.providerCooldownMs);
+  }
+
+  private clearProviderCooldown(provider: LLMProvider): void {
+    this.providerCooldownUntil.delete(provider);
   }
 }

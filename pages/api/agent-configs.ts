@@ -34,11 +34,11 @@ function redactAgentConfigPrompts(configs: AgentConfig[]): AgentConfig[] {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
   if (
-    !enforceRateLimit(req, res, {
+    !(await enforceRateLimit(req, res, {
       routeKey: "api/agent-configs",
       limit: req.method === "PUT" ? 30 : 120,
       windowMs: 60_000,
-    })
+    }))
   ) {
     return;
   }

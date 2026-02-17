@@ -2,14 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchTavilyResearch, formatTavilyResearch, tavilyEnabled } from "../../src/research/tavily";
 
-const ORIGINAL_API_KEY = process.env.TAVILY_API_KEY;
+const ORIGINAL_ENV = { ...process.env };
 
 afterEach(() => {
-  if (ORIGINAL_API_KEY === undefined) {
-    delete process.env.TAVILY_API_KEY;
-  } else {
-    process.env.TAVILY_API_KEY = ORIGINAL_API_KEY;
-  }
+  process.env = { ...ORIGINAL_ENV };
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -43,6 +39,7 @@ describe("fetchTavilyResearch", () => {
 
   it("maps Tavily results into normalized research items", async () => {
     process.env.TAVILY_API_KEY = "tvly-test-key";
+    process.env.TAVILY_ALLOWED_HOSTS = "example.com";
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -85,6 +82,67 @@ describe("fetchTavilyResearch", () => {
     const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
     expect(body.api_key).toBe("tvly-test-key");
     expect(String(body.query)).toContain("Expand into adjacent SMB segment");
+  });
+
+  it("returns null when strict host-allowlist mode is enabled without configured hosts", async () => {
+    process.env.TAVILY_API_KEY = "tvly-test-key";
+    process.env.TAVILY_REQUIRE_ALLOWED_HOSTS = "true";
+    delete process.env.TAVILY_ALLOWED_HOSTS;
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const report = await fetchTavilyResearch({
+      agentName: "CEO",
+      snapshot: {},
+    });
+
+    expect(report).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("drops unsafe and disallowed URLs", async () => {
+    process.env.TAVILY_API_KEY = "tvly-test-key";
+    process.env.TAVILY_ALLOWED_HOSTS = "example.com,*.sec.gov";
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          {
+            title: "HTTP source",
+            url: "http://example.com/insecure",
+            content: "insecure transport",
+            score: 0.8,
+          },
+          {
+            title: "Private network source",
+            url: "https://192.168.0.8/internal",
+            content: "private host",
+            score: 0.7,
+          },
+          {
+            title: "Disallowed host source",
+            url: "https://news.example.org/story",
+            content: "host not allowlisted",
+            score: 0.6,
+          },
+          {
+            title: "Allowed wildcard source",
+            url: "https://www.sec.gov/ixviewer",
+            content: "public filing data",
+            score: 0.95,
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const report = await fetchTavilyResearch({
+      agentName: "Compliance",
+      snapshot: {},
+    });
+
+    expect(report?.items).toHaveLength(1);
+    expect(report?.items[0]?.url).toBe("https://www.sec.gov/ixviewer");
   });
 });
 

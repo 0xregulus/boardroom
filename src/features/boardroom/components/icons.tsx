@@ -96,6 +96,16 @@ export function NodeGlyph({ type }: { type: NodeType }) {
       </svg>
     );
   }
+  if (type === "INTERACTION") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 8h10a2 2 0 0 1 2 2v4H7a2 2 0 0 1-2-2V8Z" />
+        <path d="m9 14-4 4v-4" />
+        <path d="M19 10V6a2 2 0 0 0-2-2H7" />
+        <path d="m15 6 4-4v4" />
+      </svg>
+    );
+  }
   if (type === "SYNTHESIS") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -122,5 +132,5 @@ export function NodeGlyph({ type }: { type: NodeType }) {
 }
 
 export function EdgePath({ start, end }: { start: NodePosition; end: NodePosition }) {
-  return <path d={edgePathData(start, end)} className="edge-path" />;
+  return <path d={edgePathData(start, end)} className="edge-path" markerEnd="url(#workflow-arrow)" />;
 }

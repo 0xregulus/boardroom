@@ -100,6 +100,7 @@ Leading indicators: add-to-cart, checkout start, payment success.
     prd: null,
     missing_sections: [],
     decision_name: "Checkout Optimization",
+    interaction_rounds: [],
     ...overrides,
   };
 }

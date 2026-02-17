@@ -18,17 +18,21 @@ describe("agent_config", () => {
     expect(defaults).toHaveLength(4);
   });
 
-  it("includes runtime placeholders in default prompt templates", () => {
+  it("keeps runtime context instructions out of default prompt templates", () => {
     const defaults = buildDefaultAgentConfigs();
 
     defaults.forEach((config) => {
-      expect(config.userMessage).toContain("{snapshot_json}");
-      expect(config.userMessage).toContain("{missing_sections_str}");
-      expect(config.userMessage).toContain("{governance_checkbox_fields_str}");
+      expect(config.userMessage).not.toContain("Strategic Decision Snapshot:");
+      expect(config.userMessage).not.toContain("{snapshot_json}");
+      expect(config.userMessage).not.toContain("{missing_sections_str}");
+      expect(config.userMessage).not.toContain("{governance_checkbox_fields_str}");
+      expect(config.userMessage).not.toContain(
+        "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
+      );
     });
   });
 
-  it("upgrades legacy core user prompts to templated defaults", () => {
+  it("upgrades legacy core user prompts to current defaults", () => {
     const legacyCeoPrompt =
       "Review the strategic decision brief. Return a JSON assessment with thesis, score, blockers, risks, required_changes, approval_conditions, and governance_checks_met. Prioritize strategic clarity, decision quality, and organizational alignment.";
 
@@ -40,7 +44,7 @@ describe("agent_config", () => {
     ] as unknown as AgentConfig[]);
 
     const ceo = normalized.find((config) => config.id === "ceo");
-    expect(ceo?.userMessage).toContain("{snapshot_json}");
+    expect(ceo?.userMessage).toBe(getDefaultAgentConfig("ceo").userMessage);
     expect(ceo?.userMessage).not.toBe(legacyCeoPrompt);
   });
 

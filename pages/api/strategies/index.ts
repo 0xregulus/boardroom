@@ -11,11 +11,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (
-    !enforceRateLimit(req, res, {
+    !(await enforceRateLimit(req, res, {
       routeKey: "api/strategies/index",
       limit: 120,
       windowMs: 60_000,
-    })
+    }))
   ) {
     return;
   }

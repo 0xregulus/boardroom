@@ -11,7 +11,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "workflow": "tsx src/runner.ts",
+    "precommit": "npm run lint && npm run typecheck",
+    "pre-commit": "npm run precommit",
+    "prepare": "git config core.hooksPath .githooks",
+    "security:audit": "node --import tsx src/security/cli.ts audit",
+    "security:doctor": "node --import tsx src/security/cli.ts doctor",
     "db:seed": "tsx scripts/seed_postgres.ts"
   },
   "dependencies": {

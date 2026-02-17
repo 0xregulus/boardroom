@@ -82,6 +82,50 @@ describe("ConfiguredReviewAgent", () => {
     expect(result.governance_checks_met).toEqual({ "Kill Criteria Defined": true });
   });
 
+  it("injects runtime decision context instructions even when template has no placeholders", async () => {
+    const client = mockClient([
+      JSON.stringify({
+        thesis: "Looks strong",
+        score: 8,
+        confidence: 0.8,
+        blocked: false,
+        blockers: [],
+        risks: [],
+        required_changes: [],
+        approval_conditions: [],
+        apga_impact_view: "Positive",
+        governance_checks_met: {},
+      }),
+    ]);
+
+    const agent = new ConfiguredReviewAgent("CEO", client, "gpt-4o-mini", 0.2, 1200, {
+      promptOverride: {
+        systemMessage: "System",
+        userTemplate: "Review this decision from your role perspective.",
+      },
+      provider: "OpenAI",
+    });
+
+    await agent.evaluate({
+      snapshot: { id: "d1" },
+      memory_context: {
+        missing_sections: ["Baseline"],
+        governance_checkbox_fields: ["Kill Criteria Defined", "Problem Quantified"],
+      },
+    });
+
+    const completeMock = client.complete as unknown as ReturnType<typeof vi.fn>;
+    const request = completeMock.mock.calls[0]?.[0];
+    expect(request?.userMessage).toContain("Strategic Decision Snapshot:");
+    expect(request?.userMessage).toContain("Missing sections flagged: Baseline");
+    expect(request?.userMessage).toContain(
+      "Evaluate the following governance checks (set true if met, false otherwise): Kill Criteria Defined, Problem Quantified",
+    );
+    expect(request?.userMessage).toContain(
+      "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
+    );
+  });
+
   it("returns placeholder when response is invalid", async () => {
     const client = mockClient(["unparseable"]);
     const agent = new ConfiguredReviewAgent("CEO", client, "gpt-4o-mini", 0.2, 1200, {

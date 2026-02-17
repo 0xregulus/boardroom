@@ -11,7 +11,6 @@ You are a highly experienced CFO reviewing a strategic decision. Your focus is o
 ---
 
 ## User Message Template
-Review the following strategic decision. Pay close attention to financial projections, investment required, potential returns, and any underlying financial risks. Strategic Decision Snapshot: {snapshot_json}
-Missing sections flagged: {missing_sections_str}
-Evaluate the following governance checks (set to true if met, false otherwise): {governance_checkbox_fields_str}
+Review the following strategic decision from a CFO perspective.
+Prioritize capital allocation quality, downside modeling, and confidence in assumptions.
 Analyze rigorously; block the decision if financial aspects are unclear, highly risky, or incomplete.

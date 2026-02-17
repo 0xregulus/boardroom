@@ -1,13 +1,11 @@
-import { AgentConfig, buildDefaultAgentConfigs, normalizeAgentConfigs } from "../config/agent_config";
-import { resolveModelForProvider, resolveProvider } from "../config/llm_providers";
+import type { AgentConfig } from "../config/agent_config";
+import { resolveModelForProvider } from "../config/llm_providers";
 import {
   AgentContext,
-  AgentRuntimeOptions,
   ConfiguredChairpersonAgent,
   ConfiguredComplianceAgent,
   ConfiguredReviewAgent,
 } from "../agents/base";
-import { ProviderClientRegistry } from "../llm/client";
 import { reviewOutputSchema, ReviewOutput } from "../schemas/review_output";
 import {
   getDecisionForWorkflow,
@@ -21,73 +19,33 @@ import {
 } from "../store/postgres";
 import { evaluateRequiredGates, GOVERNANCE_CHECKBOX_FIELDS, inferGovernanceChecksFromText } from "./gates";
 import { buildPrdOutput } from "./prd";
-import { RunWorkflowOptions, WorkflowState } from "./states";
-
-const DQS_THRESHOLD = 7.0;
-
-const CORE_DQS_WEIGHTS: Record<string, number> = {
-  ceo: 0.3,
-  cfo: 0.25,
-  cto: 0.25,
-  compliance: 0.2,
-};
-const EXTRA_AGENT_WEIGHT = 0.2;
-
-const STATUS_APPROVED = "Approved";
-const STATUS_BLOCKED = "Blocked";
-const STATUS_CHALLENGED = "Challenged";
-const STATUS_INCOMPLETE = "Incomplete";
-const STATUS_UNDER_EVALUATION = "Under Evaluation";
-
-type GateDecision = "approved" | "revision_required" | "blocked";
-
-const DEFAULT_TEMPERATURE = 0.2;
-const DEFAULT_MAX_TOKENS = 1200;
-const MIN_TEMPERATURE = 0;
-const MAX_TEMPERATURE = 1;
-const MIN_MAX_TOKENS = 256;
-const MAX_MAX_TOKENS = 8000;
-
-interface WorkflowDependencies {
-  providerClients: ProviderClientRegistry;
-  defaultProvider: AgentConfig["provider"];
-  modelName: string;
-  temperature: number;
-  maxTokens: number;
-  includeExternalResearch: boolean;
-  agentConfigs: AgentConfig[];
-  hasCustomAgentConfigs: boolean;
-}
-
-function isSameAgentConfig(left: AgentConfig, right: AgentConfig): boolean {
-  return (
-    left.id === right.id &&
-    left.role === right.role &&
-    left.name === right.name &&
-    left.systemMessage === right.systemMessage &&
-    left.userMessage === right.userMessage &&
-    left.provider === right.provider &&
-    left.model === right.model &&
-    left.temperature === right.temperature &&
-    left.maxTokens === right.maxTokens
-  );
-}
-
-function isSameAgentConfigSet(left: AgentConfig[], right: AgentConfig[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  const byId = new Map(right.map((config) => [config.id, config]));
-  for (const candidate of left) {
-    const baseline = byId.get(candidate.id);
-    if (!baseline || !isSameAgentConfig(candidate, baseline)) {
-      return false;
-    }
-  }
-
-  return true;
-}
+import {
+  AgentInteractionRound,
+  RunWorkflowOptions,
+  WorkflowState,
+} from "./states";
+import {
+  buildDependencies,
+  CORE_DQS_WEIGHTS,
+  createReviewAgent,
+  DQS_THRESHOLD,
+  EXTRA_AGENT_WEIGHT,
+  type GateDecision,
+  initialState,
+  maxBulkRunDecisions,
+  resolveRuntimeConfig,
+  STATUS_APPROVED,
+  STATUS_BLOCKED,
+  STATUS_CHALLENGED,
+  STATUS_INCOMPLETE,
+  STATUS_UNDER_EVALUATION,
+  type WorkflowDependencies,
+} from "./decision_workflow_runtime";
+import {
+  buildInteractionDeltas,
+  buildPeerReviewContext,
+  summarizeInteractionRound,
+} from "./decision_workflow_interactions";
 
 function invalidReviewFallback(agentName: string, reason: string): ReviewOutput {
   return {
@@ -115,19 +73,21 @@ async function getAgentReviewOutput(
   agent: ConfiguredReviewAgent | ConfiguredComplianceAgent,
   state: WorkflowState,
   missingSections: string[],
+  memoryContext: Record<string, unknown> = {},
 ): Promise<ReviewOutput> {
   const context: AgentContext = {
     snapshot: state.decision_snapshot ? (state.decision_snapshot as unknown as Record<string, unknown>) : {},
     memory_context: {
       missing_sections: missingSections,
       governance_checkbox_fields: GOVERNANCE_CHECKBOX_FIELDS,
+      ...memoryContext,
     },
   };
 
-  const agentName = (agent as unknown as { name?: string }).name ?? "UnknownAgent";
+  const agentName = agent.name ?? "UnknownAgent";
 
   try {
-    const rawReview = (await agent.evaluate(context)) as unknown;
+    const rawReview = await agent.evaluate(context);
     const validated = reviewOutputSchema.safeParse(rawReview);
 
     if (!validated.success) {
@@ -190,53 +150,18 @@ async function buildDecisionState(state: WorkflowState): Promise<WorkflowState> 
   };
 }
 
-function executionModel(config: AgentConfig, candidate?: string): string {
-  return resolveModelForProvider(config.provider, candidate ?? config.model);
-}
-
 async function runExecutiveReviews(state: WorkflowState, deps: WorkflowDependencies): Promise<WorkflowState> {
-  const useGlobalRuntime = !deps.hasCustomAgentConfigs;
   const reviews: Record<string, ReviewOutput> = {};
 
-  for (const config of deps.agentConfigs) {
-    const runtime = useGlobalRuntime
-      ? {
-          ...config,
-          model: executionModel(config, deps.modelName),
-          temperature: deps.temperature,
-          maxTokens: deps.maxTokens,
-        }
-      : {
-          ...config,
-          model: executionModel(config),
-        };
+  const promises = deps.agentConfigs.map(async (config) => {
+    const runtime = resolveRuntimeConfig(config, deps);
+    const agent = createReviewAgent(runtime, deps);
+    return { id: runtime.id, output: await getAgentReviewOutput(agent, state, state.missing_sections) };
+  });
 
-    const client = deps.providerClients.getClient(runtime.provider);
-    const options: AgentRuntimeOptions = {
-      displayName: runtime.name,
-      provider: runtime.provider,
-      includeExternalResearch: deps.includeExternalResearch,
-    };
-    if (deps.hasCustomAgentConfigs) {
-      options.promptOverride = {
-        systemMessage: runtime.systemMessage,
-        userTemplate: runtime.userMessage,
-      };
-    }
-
-    const agent =
-      runtime.id === "compliance"
-        ? new ConfiguredComplianceAgent(client, runtime.model, runtime.temperature, runtime.maxTokens, options)
-        : new ConfiguredReviewAgent(
-            runtime.role.trim().length > 0 ? runtime.role : runtime.name,
-            client,
-            runtime.model,
-            runtime.temperature,
-            runtime.maxTokens,
-            options,
-          );
-
-    reviews[runtime.id] = await getAgentReviewOutput(agent, state, state.missing_sections);
+  const results = await Promise.all(promises);
+  for (const result of results) {
+    reviews[result.id] = result.output;
   }
 
   return {
@@ -246,10 +171,66 @@ async function runExecutiveReviews(state: WorkflowState, deps: WorkflowDependenc
   };
 }
 
+async function runInteractionRounds(state: WorkflowState, deps: WorkflowDependencies): Promise<WorkflowState> {
+  const initialReviewCount = Object.keys(state.reviews).length;
+  if (deps.interactionRounds <= 0 || initialReviewCount < 2) {
+    return state;
+  }
+
+  let updatedReviews = { ...state.reviews };
+  const rounds: AgentInteractionRound[] = [];
+
+  for (let round = 1; round <= deps.interactionRounds; round += 1) {
+    const previousReviews = updatedReviews;
+    const promises = deps.agentConfigs.map(async (config) => {
+      const baseline = previousReviews[config.id];
+      if (!baseline) {
+        return { id: config.id, output: null as ReviewOutput | null };
+      }
+
+      const runtime = resolveRuntimeConfig(config, deps);
+      const agent = createReviewAgent(runtime, deps);
+      const peerReviews = buildPeerReviewContext(previousReviews, config.id);
+
+      const output = await getAgentReviewOutput(agent, state, state.missing_sections, {
+        interaction_round: round,
+        prior_self_review: baseline,
+        peer_reviews: peerReviews,
+      });
+
+      return { id: config.id, output };
+    });
+
+    const results = await Promise.all(promises);
+    const revisedReviews: Record<string, ReviewOutput> = { ...previousReviews };
+    for (const result of results) {
+      if (result.output) {
+        revisedReviews[result.id] = result.output;
+      }
+    }
+
+    const deltas = buildInteractionDeltas(previousReviews, revisedReviews, deps.agentConfigs);
+    rounds.push({
+      round,
+      summary: summarizeInteractionRound(round, deltas),
+      deltas,
+    });
+
+    updatedReviews = revisedReviews;
+  }
+
+  return {
+    ...state,
+    reviews: updatedReviews,
+    interaction_rounds: rounds,
+    status: "REVIEWING",
+  };
+}
+
 async function synthesizeReviews(state: WorkflowState, deps: WorkflowDependencies): Promise<WorkflowState> {
   const chairpersonModel = resolveModelForProvider(deps.defaultProvider, deps.modelName);
   const chairpersonAgent = new ConfiguredChairpersonAgent(
-    deps.providerClients.getClient(deps.defaultProvider),
+    deps.providerClients.getResilientClient(deps.defaultProvider),
     chairpersonModel,
     deps.temperature,
     500,
@@ -368,69 +349,13 @@ async function persistArtifacts(state: WorkflowState, gateDecision: GateDecision
   };
 }
 
-function initialState(options: RunWorkflowOptions): WorkflowState {
-  return {
-    decision_id: options.decisionId,
-    user_context: options.userContext ?? {},
-    business_constraints: options.businessConstraints ?? {},
-    strategic_goals: options.strategicGoals ?? [],
-    decision_snapshot: null,
-    reviews: {},
-    dqs: 0,
-    status: "PROPOSED",
-    synthesis: null,
-    prd: null,
-    missing_sections: [],
-    decision_name: `Decision ${options.decisionId}`,
-  };
-}
-
-function clampTemperature(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return DEFAULT_TEMPERATURE;
-  }
-
-  return Math.min(MAX_TEMPERATURE, Math.max(MIN_TEMPERATURE, Number(value.toFixed(2))));
-}
-
-function clampMaxTokens(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return DEFAULT_MAX_TOKENS;
-  }
-
-  return Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, Math.round(value)));
-}
-
-function buildDependencies(options?: Partial<RunWorkflowOptions>): WorkflowDependencies {
-  const modelName = options?.modelName ?? process.env.BOARDROOM_MODEL ?? "gpt-4o-mini";
-  const temperature = clampTemperature(options?.temperature);
-  const maxTokens = clampMaxTokens(options?.maxTokens);
-  const includeExternalResearch = options?.includeExternalResearch ?? false;
-  const agentConfigs = normalizeAgentConfigs(options?.agentConfigs);
-  const defaultAgentConfigs = buildDefaultAgentConfigs();
-  const hasCustomAgentConfigs =
-    Array.isArray(options?.agentConfigs) && !isSameAgentConfigSet(agentConfigs, defaultAgentConfigs);
-  const defaultProvider = resolveProvider(process.env.BOARDROOM_PROVIDER);
-  const providerClients = new ProviderClientRegistry();
-
-  return {
-    providerClients,
-    defaultProvider,
-    modelName,
-    temperature,
-    maxTokens,
-    includeExternalResearch,
-    agentConfigs,
-    hasCustomAgentConfigs,
-  };
-}
-
 export async function runDecisionWorkflow(options: RunWorkflowOptions): Promise<WorkflowState> {
   const deps = buildDependencies(options);
 
   let state = initialState(options);
   state = await buildDecisionState(state);
   state = await runExecutiveReviews(state, deps);
+  state = await runInteractionRounds(state, deps);
   state = await synthesizeReviews(state, deps);
   state = calculateDqs(state);
 
@@ -447,6 +372,11 @@ export async function runDecisionWorkflow(options: RunWorkflowOptions): Promise<
 export async function runAllProposedDecisions(options?: Partial<RunWorkflowOptions>): Promise<WorkflowState[]> {
   const deps = buildDependencies(options);
   const proposedDecisionIds = await listProposedDecisionIds();
+  const maxBulkRuns = maxBulkRunDecisions();
+
+  if (proposedDecisionIds.length > maxBulkRuns) {
+    throw new Error(`Bulk run limit exceeded: ${proposedDecisionIds.length} decisions exceed limit ${maxBulkRuns}`);
+  }
 
   const states: WorkflowState[] = [];
 
@@ -459,10 +389,12 @@ export async function runAllProposedDecisions(options?: Partial<RunWorkflowOptio
       modelName: options?.modelName,
       temperature: options?.temperature,
       maxTokens: options?.maxTokens,
+      interactionRounds: options?.interactionRounds,
     });
 
     state = await buildDecisionState(state);
     state = await runExecutiveReviews(state, deps);
+    state = await runInteractionRounds(state, deps);
     state = await synthesizeReviews(state, deps);
     state = calculateDqs(state);
 

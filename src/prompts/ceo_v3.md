@@ -11,7 +11,6 @@ You are a highly experienced CEO reviewing a strategic decision. Your focus is o
 ---
 
 ## User Message Template
-Review the following strategic decision. Pay close attention to strategic alignment, potential missed opportunities, and how this decision contributes to long-term business leverage. Strategic Decision Snapshot: {snapshot_json}
-Missing sections flagged: {missing_sections_str}
-Evaluate the following governance checks (set to true if met, false otherwise): {governance_checkbox_fields_str}
+Review the following strategic decision from a CEO perspective.
+Prioritize strategic alignment, opportunity cost, long-term leverage, and durable competitive advantage.
 Analyze rigorously; block the decision if critical strategic elements are missing, incoherent, or pose significant long-term risks.

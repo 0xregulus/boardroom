@@ -1,5 +1,5 @@
 import { CORE_AGENT_ORDER, providerOptions } from "../../config/agent_config";
-import type { DecisionStrategy, MatrixSectionKey, SectionMatrix, StrategicSectionTemplate, WorkflowEdge } from "./types";
+import type { MatrixSectionKey, SectionMatrix, StrategicSectionTemplate, WorkflowEdge } from "./types";
 
 const serializeSectionMatrix = (matrix: SectionMatrix): string => JSON.stringify(matrix);
 
@@ -12,57 +12,6 @@ export const CURRENCY_FORMATTER = new Intl.NumberFormat("en-US", {
 export const REVIEW_ORDER = ["CEO", "CFO", "CTO", "Compliance"];
 export const PROVIDER_OPTIONS = providerOptions();
 export const CORE_AGENT_IDS = new Set<string>(CORE_AGENT_ORDER);
-
-export const DECISION_STRATEGIES: DecisionStrategy[] = [
-  {
-    id: "307c618c",
-    name: "Vel'Afrika Optimization",
-    status: "Proposed",
-    owner: "Facundo Rodriguez",
-    reviewDate: "Feb 20, 2026",
-    summary: "Optimize mobile conversion and basket size in high-intent categories to increase APGA by 20% over the next quarter.",
-    primaryKpi: "APGA +20%",
-    investment: "$120,000",
-    strategicObjective: "Revenue Growth",
-    confidence: "Medium",
-  },
-  {
-    id: "458d92ef",
-    name: "Global Logistics",
-    status: "In Review",
-    owner: "Sarah Jenkins",
-    reviewDate: "Feb 18, 2026",
-    summary: "Scale APAC fulfillment and cross-border routing to reduce delivery times in priority markets and improve repeat conversion.",
-    primaryKpi: "Delivery Speed +40%",
-    investment: "$850,000",
-    strategicObjective: "Market Expansion",
-    confidence: "High",
-  },
-  {
-    id: "921f01bc",
-    name: "AI-Powered Support Automation",
-    status: "Approved",
-    owner: "Marcus Thorne",
-    reviewDate: "Jan 15, 2026",
-    summary: "Deploy AI Tier-1 resolution agents to cut support load, improve SLA adherence, and free specialist teams for complex issues.",
-    primaryKpi: "CSAT +15%",
-    investment: "$45,000",
-    strategicObjective: "Operational Efficiency",
-    confidence: "Very High",
-  },
-  {
-    id: "84ad22fe",
-    name: "Storefront Margin Recovery",
-    status: "Blocked",
-    owner: "Dana Cortez",
-    reviewDate: "Feb 11, 2026",
-    summary: "Rebalance pricing and promotional depth to recover gross margin while protecting category-level conversion volume.",
-    primaryKpi: "Gross Margin +4.5pp",
-    investment: "$180,000",
-    strategicObjective: "Profitability",
-    confidence: "Low",
-  },
-];
 
 export const OPTIONS_MATRIX_DEFAULT: SectionMatrix = {
   headers: ["Criteria", "Option A", "Option B", "Option C"],
@@ -191,4 +140,5 @@ export const EDGES: WorkflowEdge[] = [
   { id: "e3", source: "3", target: "4" },
   { id: "e4", source: "4", target: "5" },
   { id: "e5", source: "5", target: "6" },
+  { id: "e6", source: "6", target: "7" },
 ];

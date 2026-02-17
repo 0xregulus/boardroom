@@ -176,4 +176,113 @@ describe("ProviderClientRegistry", () => {
 
     expect(() => registry.getClient("Mistral")).toThrow("Mistral API key is required");
   });
+
+  it("falls back to the next provider when the preferred provider is rate-limited", async () => {
+    mocks.openaiCreate.mockRejectedValueOnce(new Error("OpenAI completion failed: rate limit"));
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        content: [{ type: "text", text: "fallback-result" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { ProviderClientRegistry } = await import("../../src/llm/client");
+    const registry = new ProviderClientRegistry();
+    const client = registry.getResilientClient("OpenAI");
+
+    const result = await client.complete({
+      model: "gpt-4o-mini",
+      systemMessage: "system",
+      userMessage: "user",
+      temperature: 0.2,
+      maxTokens: 400,
+    });
+
+    expect(result).toBe("fallback-result");
+    expect(mocks.openaiCreate).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/v1/messages");
+
+    const fallbackPayload = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { model: string };
+    expect(fallbackPayload.model).toBe("claude-3-5-sonnet-latest");
+  });
+
+  it("skips providers in cooldown for subsequent resilient calls", async () => {
+    process.env.BOARDROOM_PROVIDER_COOLDOWN_MS = "120000";
+    mocks.openaiCreate.mockRejectedValue(new Error("OpenAI completion failed: rate limit"));
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        content: [{ type: "text", text: "anthropic-result" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { ProviderClientRegistry } = await import("../../src/llm/client");
+    const registry = new ProviderClientRegistry();
+    const client = registry.getResilientClient("OpenAI");
+
+    const first = await client.complete({
+      model: "gpt-4o-mini",
+      systemMessage: "system",
+      userMessage: "user-1",
+      temperature: 0.2,
+      maxTokens: 400,
+    });
+
+    const second = await client.complete({
+      model: "gpt-4o-mini",
+      systemMessage: "system",
+      userMessage: "user-2",
+      temperature: 0.2,
+      maxTokens: 400,
+    });
+
+    expect(first).toBe("anthropic-result");
+    expect(second).toBe("anthropic-result");
+    expect(mocks.openaiCreate).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws aggregated error when all fallback providers fail", async () => {
+    mocks.openaiCreate.mockRejectedValueOnce(new Error("OpenAI completion failed: rate limit"));
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        statusText: "Too Many Requests",
+        json: vi.fn().mockResolvedValue({ error: { message: "anthropic busy" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        statusText: "Service Unavailable",
+        json: vi.fn().mockResolvedValue({ error: { message: "mistral unavailable" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        statusText: "Service Unavailable",
+        json: vi.fn().mockResolvedValue({ error: { message: "meta unavailable" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { ProviderClientRegistry } = await import("../../src/llm/client");
+    const registry = new ProviderClientRegistry();
+    const client = registry.getResilientClient("OpenAI");
+
+    await expect(
+      client.complete({
+        model: "gpt-4o-mini",
+        systemMessage: "system",
+        userMessage: "user",
+        temperature: 0.2,
+        maxTokens: 400,
+      }),
+    ).rejects.toThrow("All providers failed");
+    expect(mocks.openaiCreate).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });

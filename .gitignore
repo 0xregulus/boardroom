@@ -1,9 +1,5 @@
-.venv/
-__pycache__/
-*.pyc
 .env
 .env.*
-.pytest_cache/*
 node_modules/
 .next/
 out/

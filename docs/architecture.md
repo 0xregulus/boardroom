@@ -13,27 +13,34 @@
 - Agent runtime config (provider/model/system/user/temperature/max tokens) comes from `agent_configs`, with defaults when no persisted config exists.
 - Each agent uses its configured provider client (`OpenAI`, `Anthropic`, `Mistral`, `Meta`).
 - Prompt templates are configurable per agent; prompt markdown in `src/prompts/*_v3.md` is used as a fallback.
-- When `TAVILY_API_KEY` is configured and `includeExternalResearch` is `true` (default), each review agent runs a Tavily search and receives recent external evidence with source URLs in prompt context.
+- When `TAVILY_API_KEY` is configured and `includeExternalResearch` is `true` (default `false`), each review agent runs a Tavily search and receives recent external evidence with source URLs in prompt context.
+- Remote workflow runs can require explicit approval via `x-boardroom-run-approval` depending on policy env vars.
+- Bulk run execution is capped by `BOARDROOM_MAX_BULK_RUN_DECISIONS`.
 - LLM output is parsed via JSON fallback extraction and validated with Zod.
 
-3. `synthesize_reviews`
+3. `interaction_rounds`
+- Optional cross-agent rebuttal loop (default `1`, configurable `0..3` per run).
+- Each reviewer re-evaluates with peer-review summaries + its own prior output.
+- Workflow stores round-level deltas (`score_delta` and `blocked` flips) in `state_json`.
+
+4. `synthesize_reviews`
 - Chairperson agent produces executive summary and final recommendation.
 
-4. `calculate_dqs`
+5. `calculate_dqs`
 - DQS is a weighted mean over configured review agents:
   - core weights: `CEO=0.30`, `CFO=0.25`, `CTO=0.25`, `Compliance=0.20`
   - each additional custom reviewer uses weight `0.20`
   - `DQS = SUM(score_i * weight_i) / SUM(weight_i)`
 
-5. gate decision
+6. gate decision
 - `Blocked` if any review blocks.
 - `Challenged` if `DQS < 7.0`.
 - `Approved` otherwise.
 
-6. `generate_prd` (approved only)
+7. `generate_prd` (approved only)
 - Build structured PRD sections from decision text + review feedback.
 
-7. `persist_artifacts`
+8. `persist_artifacts`
 - Upsert executive reviews in `decision_reviews`.
 - Upsert chairperson synthesis in `decision_synthesis`.
 - Upsert PRD in `decision_prds` when approved.
@@ -48,7 +55,6 @@
 - API: `GET /api/strategies/:decisionId`
 - API: `GET|PUT /api/agent-configs`
 - API: `GET /api/health`
-- CLI: `npm run workflow`
 
 ## Main Code
 

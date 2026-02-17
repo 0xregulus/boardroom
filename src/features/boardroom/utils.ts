@@ -19,6 +19,8 @@ import type {
   MatrixSectionKey,
   NodePosition,
   ReportDecisionSnapshot,
+  ReportInteractionDelta,
+  ReportInteractionRound,
   ReportPrd,
   ReportReview,
   ReportReviewRisk,
@@ -28,6 +30,7 @@ import type {
   SnapshotMetrics,
   StrategyStatus,
   WorkflowNode,
+  WorkflowTask,
 } from "./types";
 
 export function cloneMatrix(matrix: SectionMatrix): SectionMatrix {
@@ -628,6 +631,49 @@ function parseDecisionSnapshot(value: unknown): ReportDecisionSnapshot | null {
   };
 }
 
+function parseInteractionDelta(value: unknown): ReportInteractionDelta | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    agent_id: asString(record.agent_id, ""),
+    agent_name: asString(record.agent_name, ""),
+    previous_score: Math.round(asNumber(record.previous_score, 0)),
+    revised_score: Math.round(asNumber(record.revised_score, 0)),
+    score_delta: Math.round(asNumber(record.score_delta, 0)),
+    previous_blocked: asBoolean(record.previous_blocked, false),
+    revised_blocked: asBoolean(record.revised_blocked, false),
+  };
+}
+
+function parseInteractionRounds(value: unknown): ReportInteractionRound[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+
+      const deltasRaw = Array.isArray(record.deltas) ? record.deltas : [];
+      const deltas = deltasRaw
+        .map((delta) => parseInteractionDelta(delta))
+        .filter((delta): delta is ReportInteractionDelta => delta !== null);
+
+      return {
+        round: Math.max(1, Math.round(asNumber(record.round, 1))),
+        summary: asString(record.summary, "Cross-agent rebuttal round executed."),
+        deltas,
+      };
+    })
+    .filter((entry): entry is ReportInteractionRound => entry !== null);
+}
+
 function parseWorkflowState(value: unknown): ReportWorkflowState | null {
   const record = asRecord(value);
   if (!record) {
@@ -660,6 +706,7 @@ function parseWorkflowState(value: unknown): ReportWorkflowState | null {
     run_id: runId,
     run_created_at: runCreatedAt.length > 0 ? runCreatedAt : undefined,
     missing_sections: asStringArray(record.missing_sections),
+    interaction_rounds: parseInteractionRounds(record.interaction_rounds),
     reviews: parsedReviews,
     synthesis: parseSynthesis(record.synthesis),
     prd: parsePrd(record.prd),
@@ -727,15 +774,62 @@ export function sortReviews(state: ReportWorkflowState): ReportReview[] {
   });
 }
 
-export function buildInitialNodes(strategyName?: string | null): WorkflowNode[] {
+export function buildReviewTasks(reviewRoles: string[]): WorkflowTask[] {
+  const counts = new Map<string, number>();
+
+  return reviewRoles.map((rawRole, index) => {
+    const title = rawRole.trim().length > 0 ? rawRole.trim() : `Agent ${index + 1}`;
+    const baseId =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "") || `agent-${index + 1}`;
+    const currentCount = (counts.get(baseId) ?? 0) + 1;
+    counts.set(baseId, currentCount);
+    const id = currentCount > 1 ? `${baseId}-${currentCount}` : baseId;
+
+    return {
+      id,
+      title,
+      status: "IDLE",
+    };
+  });
+}
+
+export function buildInteractionTasks(interactionRounds: number): WorkflowTask[] {
+  const normalized = Math.max(0, Math.min(3, Math.round(interactionRounds)));
+  const tasks: WorkflowTask[] = [];
+
+  for (let round = 1; round <= normalized; round += 1) {
+    tasks.push({
+      id: `interaction-round-${round}`,
+      title: `Round ${round}`,
+      status: "IDLE",
+    });
+  }
+
+  return tasks;
+}
+
+export function buildInitialNodes(
+  strategyName?: string | null,
+  reviewRoles: string[] = REVIEW_ORDER,
+  interactionRounds = 1,
+): WorkflowNode[] {
   const inputSubtitle = strategyName ? strategyName : "No Strategy Selected";
+  const interactionTasks = buildInteractionTasks(interactionRounds);
+  const interactionSubtitle =
+    interactionTasks.length > 0
+      ? `${interactionTasks.length} rebuttal round${interactionTasks.length === 1 ? "" : "s"}`
+      : "Rebuttal disabled";
+
   return [
     {
       id: "1",
       type: "INPUT",
       title: "Strategy Context",
       subtitle: inputSubtitle,
-      position: { x: 50, y: 96 },
+      position: { x: 40, y: 96 },
       status: "IDLE",
     },
     {
@@ -743,7 +837,7 @@ export function buildInitialNodes(strategyName?: string | null): WorkflowNode[] 
       type: "STRATEGY",
       title: "Drafting Doc",
       subtitle: "Strategic memo",
-      position: { x: 350, y: 96 },
+      position: { x: 300, y: 96 },
       status: "IDLE",
     },
     {
@@ -751,32 +845,41 @@ export function buildInitialNodes(strategyName?: string | null): WorkflowNode[] 
       type: "REVIEW",
       title: "Executive Review",
       subtitle: "CEO, CFO, CTO, Compliance",
-      position: { x: 650, y: 96 },
+      position: { x: 560, y: 96 },
       status: "IDLE",
-      tasks: ["CEO", "CFO", "CTO", "Compliance"],
+      tasks: buildReviewTasks(reviewRoles),
     },
     {
       id: "4",
-      type: "SYNTHESIS",
-      title: "Feedback Synthesis",
-      subtitle: "Quality scoring",
-      position: { x: 950, y: 96 },
+      type: "INTERACTION",
+      title: "Cross-Agent Rebuttal",
+      subtitle: interactionSubtitle,
+      position: { x: 820, y: 96 },
       status: "IDLE",
+      tasks: interactionTasks,
     },
     {
       id: "5",
-      type: "PRD",
-      title: "Generate PRD",
-      subtitle: "Execution document",
-      position: { x: 1250, y: 96 },
+      type: "SYNTHESIS",
+      title: "Feedback Synthesis",
+      subtitle: "Quality scoring",
+      position: { x: 1080, y: 96 },
       status: "IDLE",
     },
     {
       id: "6",
+      type: "PRD",
+      title: "Generate PRD",
+      subtitle: "Execution document",
+      position: { x: 1340, y: 96 },
+      status: "IDLE",
+    },
+    {
+      id: "7",
       type: "PERSIST",
       title: "DB Persist",
       subtitle: "Persist artifacts",
-      position: { x: 1550, y: 96 },
+      position: { x: 1600, y: 96 },
       status: "IDLE",
     },
   ];
@@ -843,6 +946,5 @@ export function edgePathData(start: NodePosition, end: NodePosition): string {
   const y1 = start.y + 40;
   const x2 = end.x;
   const y2 = end.y + 40;
-  const curve = Math.max(22, (x2 - x1) * 0.25);
-  return `M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`;
+  return `M ${x1} ${y1} L ${x2} ${y2}`;
 }

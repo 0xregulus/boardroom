@@ -167,6 +167,18 @@ function parseAllowedHosts(): Set<string> {
   );
 }
 
+function requireAllowedHosts(): boolean {
+  const configured = (process.env.TAVILY_REQUIRE_ALLOWED_HOSTS ?? "").trim().toLowerCase();
+  if (configured === "false") {
+    return false;
+  }
+  if (configured === "true") {
+    return true;
+  }
+
+  return true;
+}
+
 function isLikelyPromptInjection(text: string): boolean {
   const normalized = text.toLowerCase();
   return PROMPT_INJECTION_SIGNALS.some((signal) => normalized.includes(signal));
@@ -181,9 +193,98 @@ function urlHost(url: string): string | null {
   }
 }
 
-function isAllowedUrl(url: string, allowedHosts: Set<string>): boolean {
-  if (allowedHosts.size === 0) {
+function parsedUrl(url: string): URL | null {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+function isPrivateOrLocalHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (normalized.length === 0) {
     return true;
+  }
+
+  if (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "0.0.0.0" ||
+    normalized.endsWith(".localhost")
+  ) {
+    return true;
+  }
+
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(normalized)) {
+    const octets = normalized.split(".").map((entry) => Number(entry));
+    const [first, second] = octets;
+    if (octets.some((entry) => !Number.isInteger(entry) || entry < 0 || entry > 255)) {
+      return true;
+    }
+
+    if (first === 10 || first === 127) {
+      return true;
+    }
+    if (first === 169 && second === 254) {
+      return true;
+    }
+    if (first === 192 && second === 168) {
+      return true;
+    }
+    if (first === 172 && typeof second === "number" && second >= 16 && second <= 31) {
+      return true;
+    }
+  }
+
+  if (
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd") ||
+    normalized.startsWith("fe80:") ||
+    normalized.startsWith("::ffff:127.")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isSafePublicHttpsUrl(url: string): boolean {
+  const parsed = parsedUrl(url);
+  if (!parsed) {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:") {
+    return false;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  return !isPrivateOrLocalHost(host);
+}
+
+function hostMatchesAllowEntry(host: string, entry: string): boolean {
+  const normalizedEntry = entry.trim().toLowerCase();
+  if (normalizedEntry.length === 0) {
+    return false;
+  }
+
+  if (normalizedEntry.startsWith("*.")) {
+    const suffix = normalizedEntry.slice(2);
+    return host === suffix || host.endsWith(`.${suffix}`);
+  }
+
+  if (normalizedEntry.startsWith(".")) {
+    const suffix = normalizedEntry.slice(1);
+    return host === suffix || host.endsWith(`.${suffix}`);
+  }
+
+  return host === normalizedEntry;
+}
+
+function isAllowedUrl(url: string, allowedHosts: Set<string>): boolean {
+  if (!isSafePublicHttpsUrl(url)) {
+    return false;
   }
 
   const host = urlHost(url);
@@ -191,7 +292,17 @@ function isAllowedUrl(url: string, allowedHosts: Set<string>): boolean {
     return false;
   }
 
-  return allowedHosts.has(host);
+  if (allowedHosts.size === 0) {
+    return true;
+  }
+
+  for (const entry of allowedHosts) {
+    if (hostMatchesAllowEntry(host, entry)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function mapResults(results: TavilySearchResultPayload[], maxResults: number, allowedHosts: Set<string>): TavilyResearchItem[] {
@@ -241,6 +352,10 @@ export async function fetchTavilyResearch(input: TavilyResearchInput): Promise<T
   }
 
   const allowedHosts = parseAllowedHosts();
+  if (requireAllowedHosts() && allowedHosts.size === 0) {
+    return null;
+  }
+
   const sanitizedSnapshot = sanitizeForExternalUse(input.snapshot) as Record<string, unknown>;
   const { query, lens } = buildResearchQuery({
     ...input,

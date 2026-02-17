@@ -29,13 +29,7 @@ const DEFAULT_CUSTOM_PROFILE: Omit<AgentConfig, "id"> = {
   name: "Custom Review Agent",
   systemMessage:
     "You are a senior executive reviewer evaluating this strategic decision for quality, feasibility, and risk. Be specific, evidence-driven, and explicit about blockers.",
-  userMessage: [
-    "Review the strategic decision brief.",
-    "Strategic Decision Snapshot: {snapshot_json}",
-    "Missing sections flagged: {missing_sections_str}",
-    "Evaluate the following governance checks (set true if met, false otherwise): {governance_checkbox_fields_str}",
-    "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, and governance_checks_met.",
-  ].join("\n"),
+  userMessage: "Review the strategic decision brief from your perspective.",
   provider: "OpenAI",
   model: "gpt-4o-mini",
   temperature: 0.35,
@@ -48,13 +42,8 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     name: "Chief Executive Officer Agent",
     systemMessage:
       "You are the CEO of a high-growth technology company. Focus on strategic alignment, long-term shareholder value, market positioning, and execution leverage. Assess whether this decision strengthens durable competitive advantage.",
-    userMessage: [
-      "Review the following strategic decision. Pay close attention to strategic alignment, potential missed opportunities, and long-term business leverage.",
-      "Strategic Decision Snapshot: {snapshot_json}",
-      "Missing sections flagged: {missing_sections_str}",
-      "Evaluate the following governance checks (set true if met, false otherwise): {governance_checkbox_fields_str}",
-      "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
-    ].join("\n"),
+    userMessage:
+      "Review the strategic decision brief from the CEO perspective. Prioritize strategic clarity, decision quality, long-term leverage, and organizational alignment.",
     provider: "OpenAI",
     model: "gpt-4o",
     temperature: 0.55,
@@ -65,13 +54,8 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     name: "Chief Financial Officer Agent",
     systemMessage:
       "You are the CFO. Focus on capital allocation quality, risk-adjusted ROI, downside protection, sensitivity analysis, cash efficiency, and payback profile. Reject optimistic assumptions that are unsupported.",
-    userMessage: [
-      "Review the following strategic decision. Pay close attention to financial projections, required investment, potential returns, and downside exposure.",
-      "Strategic Decision Snapshot: {snapshot_json}",
-      "Missing sections flagged: {missing_sections_str}",
-      "Evaluate the following governance checks (set true if met, false otherwise): {governance_checkbox_fields_str}",
-      "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
-    ].join("\n"),
+    userMessage:
+      "Review the strategic decision brief from the CFO perspective. Emphasize capital allocation quality, downside modeling, cash efficiency, and confidence in assumptions.",
     provider: "OpenAI",
     model: "gpt-4o",
     temperature: 0.25,
@@ -82,13 +66,8 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     name: "Chief Technology Officer Agent",
     systemMessage:
       "You are the CTO. Focus on architecture feasibility, implementation complexity, technical debt implications, scalability, reliability, and engineering sequencing. Highlight hidden execution risks.",
-    userMessage: [
-      "Review the following strategic decision. Pay close attention to feasibility, architecture impact, scalability constraints, and execution risk.",
-      "Strategic Decision Snapshot: {snapshot_json}",
-      "Missing sections flagged: {missing_sections_str}",
-      "Evaluate the following governance checks (set true if met, false otherwise): {governance_checkbox_fields_str}",
-      "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
-    ].join("\n"),
+    userMessage:
+      "Review the strategic decision brief from the CTO perspective. Focus on architecture feasibility, implementation complexity, scalability, reliability, and hidden execution risk.",
     provider: "Anthropic",
     model: "claude-3-5-sonnet-latest",
     temperature: 0.45,
@@ -99,13 +78,8 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     name: "General Counsel & Compliance Agent",
     systemMessage:
       "You are the General Counsel and Compliance lead. Focus on legal exposure, regulatory obligations, data privacy, ethics, and governance controls. Treat missing compliance evidence as high-risk.",
-    userMessage: [
-      "Review the following strategic decision. Pay close attention to regulatory conflicts, legal liabilities, data handling practices, and ethical concerns.",
-      "Strategic Decision Snapshot: {snapshot_json}",
-      "Missing sections flagged: {missing_sections_str}",
-      "Evaluate the following governance checks (set true if met, false otherwise): {governance_checkbox_fields_str}",
-      "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
-    ].join("\n"),
+    userMessage:
+      "Review the strategic decision brief from the compliance perspective. Focus on legal exposure, regulatory obligations, data privacy, ethics, and governance controls.",
     provider: "OpenAI",
     model: "gpt-4o-mini",
     temperature: 0.12,
@@ -113,12 +87,42 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
   },
 };
 
-const LEGACY_CORE_USER_MESSAGE_DEFAULTS: Record<CoreAgentId, string> = {
-  ceo: "Review the strategic decision brief. Return a JSON assessment with thesis, score, blockers, risks, required_changes, approval_conditions, and governance_checks_met. Prioritize strategic clarity, decision quality, and organizational alignment.",
-  cfo: "Evaluate the financial quality of this proposal. Return strict JSON with capital allocation strengths, major risks, blockers, and required changes. Emphasize downside modeling and confidence in assumptions.",
-  cto: "Assess technical feasibility and execution risk in strict JSON. Identify engineering blockers, architecture tradeoffs, long-term maintenance impact, and required design/implementation mitigations.",
-  compliance:
+const RUNTIME_CONTEXT_SUFFIX = [
+  "Strategic Decision Snapshot: {snapshot_json}",
+  "Missing sections flagged: {missing_sections_str}",
+  "Evaluate the following governance checks (set true if met, false otherwise): {governance_checkbox_fields_str}",
+  "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
+];
+
+const LEGACY_CORE_USER_MESSAGE_DEFAULTS: Record<CoreAgentId, readonly string[]> = {
+  ceo: [
+    "Review the strategic decision brief. Return a JSON assessment with thesis, score, blockers, risks, required_changes, approval_conditions, and governance_checks_met. Prioritize strategic clarity, decision quality, and organizational alignment.",
+    [
+      "Review the following strategic decision. Pay close attention to strategic alignment, potential missed opportunities, and long-term business leverage.",
+      ...RUNTIME_CONTEXT_SUFFIX,
+    ].join("\n"),
+  ],
+  cfo: [
+    "Evaluate the financial quality of this proposal. Return strict JSON with capital allocation strengths, major risks, blockers, and required changes. Emphasize downside modeling and confidence in assumptions.",
+    [
+      "Review the following strategic decision. Pay close attention to financial projections, required investment, potential returns, and downside exposure.",
+      ...RUNTIME_CONTEXT_SUFFIX,
+    ].join("\n"),
+  ],
+  cto: [
+    "Assess technical feasibility and execution risk in strict JSON. Identify engineering blockers, architecture tradeoffs, long-term maintenance impact, and required design/implementation mitigations.",
+    [
+      "Review the following strategic decision. Pay close attention to feasibility, architecture impact, scalability constraints, and execution risk.",
+      ...RUNTIME_CONTEXT_SUFFIX,
+    ].join("\n"),
+  ],
+  compliance: [
     "Review this proposal for legal and compliance risk. Return strict JSON with explicit blockers, required remediations, and governance checks. Flag unresolved compliance concerns decisively.",
+    [
+      "Review the following strategic decision. Pay close attention to regulatory conflicts, legal liabilities, data handling practices, and ethical concerns.",
+      ...RUNTIME_CONTEXT_SUFFIX,
+    ].join("\n"),
+  ],
 };
 
 function normalizeProvider(value: unknown): LLMProvider {
@@ -204,7 +208,7 @@ function normalizeSingleAgentConfig(value: unknown): AgentConfig | null {
   const provider = normalizeProvider(source.provider);
   const normalizedUserMessage = normalizeText(source.userMessage, defaults.userMessage);
   const userMessage =
-    isCoreAgentId(normalizedId) && normalizedUserMessage === LEGACY_CORE_USER_MESSAGE_DEFAULTS[normalizedId]
+    isCoreAgentId(normalizedId) && LEGACY_CORE_USER_MESSAGE_DEFAULTS[normalizedId].includes(normalizedUserMessage)
       ? defaults.userMessage
       : normalizedUserMessage;
 
