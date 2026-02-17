@@ -1,7 +1,29 @@
 # Boardroom
 
 ## Purpose
-Boardroom is a multi-agent strategic decision workflow. It evaluates one decision artifact with executive reviewers, synthesizes trade-offs, computes a Decision Quality Score (DQS), and gates the decision into `Approved`, `Challenged`, or `Blocked`.
+Boardroom operationalizes a structured [Strategic Decision Framework](docs/Strategic-Decision-Making-Framework.md) into a multi-agent decision governance system.
+
+It evaluates a single strategic initiative as an investment decision — not just a feature proposal.
+
+Through executive-style AI reviewers, it:
+	•	Stress-tests assumptions
+	•	Forces explicit trade-offs
+	•	Models downside exposure
+	•	Evaluates capital efficiency
+	•	Surfaces compliance and risk implications
+
+Each decision is scored across two dimensions:
+	•	Hygiene (are the right artifacts and guardrails in place?)
+	•	Substance (does the strategic and economic logic hold?)
+
+Boardroom then synthesizes the analysis and applies governance logic to classify the outcome as:
+	•	Approved — Decision meets strategic, financial, and risk thresholds
+	•	Challenged — Gaps or weak trade-offs require revision
+	•	Blocked — Risk, compliance, or capital exposure is unacceptable
+
+The goal isn’t to automate strategy.
+
+It’s to institutionalize disciplined decision-making — making capital allocation, downside modeling, and governance explicit before execution begins.
 
 ## UI Preview
 
