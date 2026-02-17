@@ -1,6 +1,44 @@
 # Data Model
 
+
 Tables are created automatically from `src/store/postgres.ts` on first database access.
+
+```mermaid
+erDiagram
+    DECISIONS ||--|| DECISION_DOCUMENTS : "Has Body Text"
+    DECISIONS ||--o{ DECISION_GOVERNANCE_CHECKS : "Has Gates"
+    DECISIONS ||--o{ DECISION_REVIEWS : "Has Reviews"
+    DECISIONS ||--o{ DECISION_SYNTHESIS : "Has Summary"
+    DECISIONS ||--o| DECISION_PRDS : "Generates PRD"
+    DECISIONS ||--o{ WORKFLOW_RUNS : "Has History"
+
+    DECISIONS {
+        uuid id PK
+        text name
+        text status
+        float8 dqs
+    }
+    DECISION_REVIEWS {
+        uuid decision_id FK
+        text agent_name
+        float8 score
+        jsonb structured_review
+    }
+    WORKFLOW_RUNS {
+        uuid id PK
+        uuid decision_id FK
+        float8 dqs
+        text gate_decision
+        jsonb run_state
+    }
+    AGENT_CONFIGS {
+        text agent_name PK
+        text provider
+        text model
+        jsonb config
+    }
+```
+
 
 ## Core Decision Tables
 - `decisions`

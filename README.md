@@ -3,6 +3,24 @@
 ## Purpose
 Boardroom is a multi-agent strategic decision workflow. It evaluates one decision artifact with executive reviewers, synthesizes trade-offs, computes a Decision Quality Score (DQS), and gates the decision into `Approved`, `Challenged`, or `Blocked`.
 
+## UI Preview
+
+**Dashboard**
+![Dashboard](docs/images/home.png)
+
+**Strategy Details**
+![Strategy Details](docs/images/details.png)
+
+**Workflow Editor**
+![Workflow Editor](docs/images/editor.png)
+
+**Agent Config**
+![Agent Config](docs/images/config.png)
+
+**Output Preview**
+![Output Preview](docs/images/output.png)
+
+
 ## General Usage
 1. Configure environment variables from `.env.example`.
 2. Load strategic decisions into PostgreSQL.
@@ -38,3 +56,10 @@ Each run produces:
 - Chairperson synthesis in `decision_synthesis`.
 - PRD output in `decision_prds` when approved.
 - A workflow run record in `workflow_runs` with DQS, gate decision, and state snapshot.
+
+# Next steps
+- Add vector DB for use previous decisions and reviews as context.
+- Add an assitant for creating the Strategic Decision artifact.
+
+# Contributions
+Feel free to fork the repo, open an issue, or submit a pull request.

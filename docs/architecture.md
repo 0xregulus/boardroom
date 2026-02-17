@@ -2,7 +2,39 @@
 
 ## Core Flow
 
+
 1. `build_decision`
+```mermaid
+sequenceDiagram
+    participant ID as Ingestion / DB
+    participant WF as Workflow Engine
+    participant AG as Agents (CEO, CFO, CTO)
+    participant CH as Chairperson
+    participant DB as Postgres
+
+    ID->>WF: Load Decision & Docs
+    WF->>WF: Infer Governance Gates
+    WF->>AG: Executive Review (Parallel)
+    AG-->>WF: Individual Reviews
+    
+    loop Interaction Rounds (Optional)
+        WF->>AG: Rebuttal / Refinement
+        AG-->>WF: Updated Reviews
+    end
+
+    WF->>CH: Synthesize Reviews
+    CH-->>WF: Executive Summary & Recommendation
+    
+    WF->>WF: Compute DQS & Gate Decision
+    
+    alt Approved
+        WF->>WF: Generate PRD
+    else Challenged/Blocked
+        WF->>WF: Skip PRD
+    end
+    
+    WF->>DB: Persist Reviews, Synthesis, Run History
+```
 - Fetch decision metadata + body text from PostgreSQL (`decisions`, `decision_documents`).
 - Infer governance gates from text.
 - Auto-mark inferred governance checks in `decision_governance_checks`.
