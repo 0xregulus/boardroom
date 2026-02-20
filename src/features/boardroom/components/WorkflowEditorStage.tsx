@@ -140,7 +140,6 @@ const REVIEWER_SPECS: ReadonlyArray<{ title: string; subtitle: string; requiresR
 const REBUTTAL_ROUND_OPTIONS: readonly number[] = [0, 1, 2, 3];
 
 export function WorkflowEditorStage({
-  selectedStrategy,
   includeExternalResearch,
   includeRedTeamPersonas,
   interactionRounds,

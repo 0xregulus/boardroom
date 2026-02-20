@@ -1,6 +1,29 @@
 import { getPromptDefinition } from "../prompts";
 import { reviewOutputSchema, type ReviewOutput } from "../schemas/review_output";
 
+export function invalidReviewFallback(agentName: string, reason: string): ReviewOutput {
+  return {
+    agent: agentName,
+    thesis: `${agentName} review output was invalid and requires manual follow-up.`,
+    score: 1,
+    confidence: 0,
+    blocked: true,
+    blockers: [`Invalid review output schema: ${reason}`],
+    risks: [
+      {
+        type: "schema_validation",
+        severity: 9,
+        evidence: "LLM response did not match required ReviewOutput schema.",
+      },
+    ],
+    citations: [],
+    required_changes: ["Regenerate review with strict JSON schema compliance."],
+    approval_conditions: [],
+    apga_impact_view: "Unknown due to invalid review output.",
+    governance_checks_met: {},
+  };
+}
+
 export interface PromptPayload {
   systemMessage: string;
   userTemplate: string;
@@ -257,8 +280,8 @@ export function buildInteractionRuntimeInstruction(memoryContext: Record<string,
 
   const priorSelfReview =
     memoryContext.prior_self_review &&
-    typeof memoryContext.prior_self_review === "object" &&
-    !Array.isArray(memoryContext.prior_self_review)
+      typeof memoryContext.prior_self_review === "object" &&
+      !Array.isArray(memoryContext.prior_self_review)
       ? (memoryContext.prior_self_review as Record<string, unknown>)
       : {};
 
@@ -361,8 +384,8 @@ export function buildDecisionAncestryRuntimeInstruction(memoryContext: Record<st
 export function buildMarketIntelligenceRuntimeInstruction(memoryContext: Record<string, unknown>): string {
   const intelligence =
     memoryContext.market_intelligence &&
-    typeof memoryContext.market_intelligence === "object" &&
-    !Array.isArray(memoryContext.market_intelligence)
+      typeof memoryContext.market_intelligence === "object" &&
+      !Array.isArray(memoryContext.market_intelligence)
       ? (memoryContext.market_intelligence as Record<string, unknown>)
       : null;
 

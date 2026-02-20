@@ -35,6 +35,10 @@ const workflowMockState = vi.hoisted(() => ({
   synthesis: {
     executive_summary: "Synthesis",
     final_recommendation: "Approved",
+    consensus_points: [],
+    point_of_contention: "",
+    residual_risks: [],
+    evidence_citations: [],
     conflicts: [],
     blockers: [],
     required_revisions: [],
@@ -283,6 +287,10 @@ beforeEach(() => {
   workflowMockState.synthesis = {
     executive_summary: "Synthesis",
     final_recommendation: "Approved",
+    consensus_points: [],
+    point_of_contention: "",
+    residual_risks: [],
+    evidence_citations: [],
     conflicts: [],
     blockers: [],
     required_revisions: [],

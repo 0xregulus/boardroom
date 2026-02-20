@@ -339,7 +339,13 @@ export function WorkflowPreviewStage({
 
   const gaugeRadius = 110;
   const gaugeCircumference = 2 * Math.PI * gaugeRadius;
-  const gaugeOffset = gaugeCircumference - (gaugeCircumference * dqsPercent) / 100;
+  const gaugeSweepRatio = 0.7;
+  const gaugeSweep = gaugeCircumference * gaugeSweepRatio;
+  const gaugeGap = gaugeCircumference - gaugeSweep;
+  const gaugeTrackDasharray = `${gaugeSweep} ${gaugeGap}`;
+  const gaugeFill = (gaugeSweep * dqsPercent) / 100;
+  const gaugeFillDasharray = `${gaugeFill} ${gaugeCircumference}`;
+  const gaugeTone = dqsPercent >= 75 ? "healthy" : dqsPercent >= 50 ? "watch" : "critical";
 
   return (
     <section className="preview-mode report-v3-mode">
@@ -388,17 +394,23 @@ export function WorkflowPreviewStage({
                 <h3>Decision Pulse & DQS</h3>
                 <div className="report-v3-gauge">
                   <svg viewBox="0 0 280 280" aria-hidden="true">
-                    <circle className="report-v3-gauge-track" cx="140" cy="140" r={gaugeRadius} />
                     <circle
-                      className="report-v3-gauge-fill"
+                      className="report-v3-gauge-track"
                       cx="140"
                       cy="140"
                       r={gaugeRadius}
-                      strokeDasharray={gaugeCircumference}
-                      strokeDashoffset={gaugeOffset}
+                      strokeDasharray={gaugeTrackDasharray}
+                    />
+                    <circle
+                      className={`report-v3-gauge-fill tone-${gaugeTone}`}
+                      cx="140"
+                      cy="140"
+                      r={gaugeRadius}
+                      strokeDasharray={gaugeFillDasharray}
+                      strokeDashoffset={0}
                     />
                   </svg>
-                  <div className="report-v3-gauge-value">
+                  <div className={`report-v3-gauge-value tone-${gaugeTone}`}>
                     <strong>{dqsPercent.toFixed(1)}</strong>
                     <span>/ 100.0 DQS</span>
                   </div>
@@ -439,13 +451,31 @@ export function WorkflowPreviewStage({
               <article className="briefing-card persona-card">
                 <h3>Agent Personas</h3>
                 <div className="briefing-persona-grid">
-                  {activeReviews.slice(0, 6).map((review, index) => (
-                    <article key={`${review.agent}-${index}`}>
-                      <span>{formatAgentSummaryLabel(review.agent, index)}</span>
-                      <strong>{Math.round(clampPercent(review.score * 10))}/100</strong>
-                      <p>{review.blocked ? "Blocked" : review.confidence < 0.65 ? "Challenged" : "Aligned"}</p>
-                    </article>
-                  ))}
+                  {activeReviews.slice(0, 6).map((review, index) => {
+                    const personaScore = Math.round(clampPercent(review.score * 10));
+                    const personaStatus = review.blocked ? "Blocked" : review.confidence < 0.65 ? "Challenged" : "Aligned";
+                    const personaTone = review.blocked ? "blocked" : review.confidence < 0.65 ? "challenged" : "aligned";
+
+                    return (
+                      <article key={`${review.agent}-${index}`}>
+                        <div className="briefing-persona-head">
+                          <span>{formatAgentSummaryLabel(review.agent, index)}</span>
+                          <span className={`persona-badge tone-${personaTone}`}>{personaStatus}</span>
+                        </div>
+                        <strong>{personaScore}/100</strong>
+                        <div
+                          className="persona-progress"
+                          role="progressbar"
+                          aria-label={`${formatAgentSummaryLabel(review.agent, index)} score`}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={personaScore}
+                        >
+                          <span className={`persona-progress-fill tone-${personaTone}`} style={{ width: `${personaScore}%` }} />
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               </article>
 

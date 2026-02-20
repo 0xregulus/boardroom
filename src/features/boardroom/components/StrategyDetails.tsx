@@ -1,6 +1,5 @@
 import { DecisionStrategy } from "../types";
 import { strategyStatusTone } from "../utils";
-import { ChevronGlyph } from "./icons";
 
 interface StrategyDetailsProps {
     selectedStrategy: DecisionStrategy | null;

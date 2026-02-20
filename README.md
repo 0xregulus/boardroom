@@ -42,6 +42,9 @@ It’s to institutionalize disciplined decision-making — making capital alloca
 **Report**
 ![Report](docs/images/report.png)
 
+**Create Strategy**
+![Create Strategy](docs/images/create.png)
+
 ## Live Governance Briefing UI
 
 Boardroom now presents report output as a **Live Governance Briefing** using an inverted-pyramid structure:

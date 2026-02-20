@@ -1,5 +1,4 @@
 import { PRDOutput } from "../schemas/prd_output";
-import { ReviewOutput } from "../schemas/review_output";
 import { WorkflowState } from "./states";
 import {
   PRD_SECTION_DEFAULTS,

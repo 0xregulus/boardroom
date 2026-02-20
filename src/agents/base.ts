@@ -32,28 +32,6 @@ export interface AgentRuntimeOptions {
   includeExternalResearch?: boolean;
 }
 
-function invalidReviewFallback(agentName: string, reason: string): ReviewOutput {
-  return {
-    agent: agentName,
-    thesis: `${agentName} review output was invalid and requires manual follow-up.`,
-    score: 1,
-    confidence: 0,
-    blocked: true,
-    blockers: [`Invalid review output schema: ${reason}`],
-    risks: [
-      {
-        type: "schema_validation",
-        severity: 9,
-        evidence: "LLM response did not match required ReviewOutput schema.",
-      },
-    ],
-    citations: [],
-    required_changes: ["Regenerate review with strict JSON schema compliance."],
-    approval_conditions: [],
-    apga_impact_view: "Unknown due to invalid review output.",
-    governance_checks_met: {},
-  };
-}
 
 export abstract class BaseAgent {
   readonly name: string;
@@ -177,13 +155,10 @@ export abstract class BaseReviewAgent extends BaseAgent {
     const ancestryRuntimeInstruction = buildDecisionAncestryRuntimeInstruction(context.memory_context);
     const marketIntelligenceRuntimeInstruction = buildMarketIntelligenceRuntimeInstruction(context.memory_context);
     const hygieneRuntimeInstruction = buildHygieneRuntimeInstruction(context.memory_context);
-    const userMessage = `${withResearchContext(baseUserMessage, researchBlock)}\n\n${runtimeContextInstruction}${
-      interactionRuntimeInstruction ? `\n\n${interactionRuntimeInstruction}` : ""
-    }${ancestryRuntimeInstruction ? `\n\n${ancestryRuntimeInstruction}` : ""}${
-      marketIntelligenceRuntimeInstruction ? `\n\n${marketIntelligenceRuntimeInstruction}` : ""
-    }${
-      hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : ""
-    }\n\n${buildReviewJsonContractInstruction(this.name, governanceFields)}`;
+    const userMessage = `${withResearchContext(baseUserMessage, researchBlock)}\n\n${runtimeContextInstruction}${interactionRuntimeInstruction ? `\n\n${interactionRuntimeInstruction}` : ""
+      }${ancestryRuntimeInstruction ? `\n\n${ancestryRuntimeInstruction}` : ""}${marketIntelligenceRuntimeInstruction ? `\n\n${marketIntelligenceRuntimeInstruction}` : ""
+      }${hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : ""
+      }\n\n${buildReviewJsonContractInstruction(this.name, governanceFields)}`;
 
     try {
       const content = await this.llmClient.complete({
@@ -346,14 +321,14 @@ export class ConfiguredChairpersonAgent extends BaseAgent {
       : [];
     const weightedConflictSignal =
       context.memory_context.weighted_conflict_signal &&
-      typeof context.memory_context.weighted_conflict_signal === "object" &&
-      !Array.isArray(context.memory_context.weighted_conflict_signal)
+        typeof context.memory_context.weighted_conflict_signal === "object" &&
+        !Array.isArray(context.memory_context.weighted_conflict_signal)
         ? context.memory_context.weighted_conflict_signal
         : {};
     const evidenceVerification =
       context.memory_context.evidence_verification &&
-      typeof context.memory_context.evidence_verification === "object" &&
-      !Array.isArray(context.memory_context.evidence_verification)
+        typeof context.memory_context.evidence_verification === "object" &&
+        !Array.isArray(context.memory_context.evidence_verification)
         ? context.memory_context.evidence_verification
         : null;
 

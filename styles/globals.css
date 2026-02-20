@@ -4548,7 +4548,14 @@ textarea {
   background: #f8fafc;
   padding: 8px;
   display: grid;
-  gap: 3px;
+  gap: 6px;
+}
+
+.briefing-persona-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .briefing-persona-grid span {
@@ -4565,10 +4572,60 @@ textarea {
   line-height: 1.1;
 }
 
-.briefing-persona-grid p {
-  margin: 0;
-  color: #475569;
-  font-size: 11px;
+.persona-badge {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.persona-badge.tone-aligned {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.persona-badge.tone-challenged {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.persona-badge.tone-blocked {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.persona-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.persona-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  transition: width 0.24s ease;
+}
+
+.persona-progress-fill.tone-aligned {
+  background: linear-gradient(90deg, #22c55e, #10b981);
+}
+
+.persona-progress-fill.tone-challenged {
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+}
+
+.persona-progress-fill.tone-blocked {
+  background: linear-gradient(90deg, #f87171, #ef4444);
 }
 
 .briefing-artifact-block {
@@ -4903,7 +4960,6 @@ textarea {
   stroke: #e2e8f0;
   stroke-width: 18px;
   stroke-linecap: round;
-  stroke-dasharray: 480 230;
 }
 
 .report-v3-gauge-fill {
@@ -4911,9 +4967,19 @@ textarea {
   stroke: #6366f1;
   stroke-width: 18px;
   stroke-linecap: round;
-  stroke-dasharray: 691;
-  stroke-dashoffset: 180;
-  transition: stroke-dashoffset 0.24s ease;
+  transition: stroke 0.24s ease, stroke-dasharray 0.24s ease;
+}
+
+.report-v3-gauge-fill.tone-healthy {
+  stroke: #10b981;
+}
+
+.report-v3-gauge-fill.tone-watch {
+  stroke: #f59e0b;
+}
+
+.report-v3-gauge-fill.tone-critical {
+  stroke: #ef4444;
 }
 
 .report-v3-gauge-value {
@@ -4929,6 +4995,18 @@ textarea {
   font-size: 58px;
   font-size: clamp(44px, 3.6vw, 62px);
   line-height: 0.95;
+}
+
+.report-v3-gauge-value.tone-healthy strong {
+  color: #059669;
+}
+
+.report-v3-gauge-value.tone-watch strong {
+  color: #d97706;
+}
+
+.report-v3-gauge-value.tone-critical strong {
+  color: #dc2626;
 }
 
 .report-v3-gauge-value span {
