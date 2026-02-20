@@ -669,6 +669,11 @@ function applyChairpersonGuardrails(state: WorkflowState): WorkflowState {
   const specialized = specializedConfidenceValues(state.reviews);
   const specializedConfidence = average(specialized);
   const evidenceCitations = buildSynthesisEvidenceCitations(state.reviews);
+  const synthesisEvidenceCitations = Array.isArray(synthesis.evidence_citations)
+    ? synthesis.evidence_citations.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+  const mergedEvidenceCitations = [...new Set([...synthesisEvidenceCitations, ...evidenceCitations])].slice(0, 8);
+  const lastInteractionSummary = state.interaction_rounds.at(-1)?.summary?.trim() ?? "";
 
   const blockers = [...synthesis.blockers];
   const revisions = [...synthesis.required_revisions];
@@ -692,11 +697,15 @@ function applyChairpersonGuardrails(state: WorkflowState): WorkflowState {
     );
   }
 
-  if (evidenceCitations.length > 0) {
+  if (mergedEvidenceCitations.length > 0) {
     const hasEvidenceSection = synthesis.executive_summary.toLowerCase().includes("evidence citations:");
     if (!hasEvidenceSection) {
-      synthesis.executive_summary = `${synthesis.executive_summary}\nEvidence citations:\n- ${evidenceCitations.join("\n- ")}`;
+      synthesis.executive_summary = `${synthesis.executive_summary}\nEvidence citations:\n- ${mergedEvidenceCitations.join("\n- ")}`;
     }
+  }
+
+  if (!synthesis.point_of_contention.trim() && lastInteractionSummary.length > 0) {
+    synthesis.point_of_contention = lastInteractionSummary;
   }
 
   if (finalRecommendation === "Approved" && (state.dissent_penalty ?? 0) >= 2.5) {
@@ -713,9 +722,10 @@ function applyChairpersonGuardrails(state: WorkflowState): WorkflowState {
 
   return {
     ...state,
-    chairperson_evidence_citations: evidenceCitations,
+    chairperson_evidence_citations: mergedEvidenceCitations,
     synthesis: {
       ...synthesis,
+      evidence_citations: mergedEvidenceCitations,
       final_recommendation: finalRecommendation,
       blockers: [...new Set(blockers)].slice(0, 6),
       required_revisions: [...new Set(revisions)].slice(0, 8),

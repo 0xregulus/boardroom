@@ -710,6 +710,10 @@ function parseSynthesis(value: unknown): ReportSynthesis | null {
   return {
     executive_summary: asString(record.executive_summary),
     final_recommendation: finalRecommendation,
+    consensus_points: asStringArray(record.consensus_points),
+    point_of_contention: asString(record.point_of_contention),
+    residual_risks: asStringArray(record.residual_risks),
+    evidence_citations: asStringArray(record.evidence_citations),
     conflicts: asStringArray(record.conflicts),
     blockers: asStringArray(record.blockers),
     required_revisions: asStringArray(record.required_revisions),

@@ -107,9 +107,9 @@ function buildRedTeamPersonas(
       temperature,
       maxTokens,
       systemMessage:
-        "You are a red-team pre-mortem analyst. Assume this project failed one year from now and explain why with concrete failure paths, triggers, and overlooked assumptions.",
+        "ROLE: Boardroom Executive Reviewer (Pre-Mortem Red Team). Assume the project has already failed one year from now and work backward to identify the likely killer cause, trigger sequence, and missed early-warning signals.",
       userMessage:
-        "Run a pre-mortem review of the strategic decision. Work backward from failure in 12 months. Identify specific failure chains, leading indicators that would have predicted failure, and hard stop criteria. Return strict JSON schema.",
+        "Run a pre-mortem review. Work backward from a 12-month failure outcome and specify concrete failure chains (market shift, technical collapse, competitor move, governance failure), leading indicators, and hard-stop criteria. Return strict JSON.",
     },
     {
       id: "resource-competitor",
@@ -120,9 +120,9 @@ function buildRedTeamPersonas(
       temperature,
       maxTokens,
       systemMessage:
-        "You are a capital allocation challenger. Your job is to argue that this initiative should lose funding to alternative priorities unless the proposal demonstrates superior risk-adjusted return.",
+        "ROLE: Boardroom Executive Reviewer (Resource Competitor Red Team). Argue why capital should be allocated to competing priorities unless this initiative clearly wins on risk-adjusted return and strategic leverage.",
       userMessage:
-        "Challenge this strategy from a resource competition perspective. Explain why capital should be reallocated elsewhere unless this proposal clearly dominates alternatives on ROI, strategic leverage, and execution risk. Return strict JSON schema.",
+        "Challenge this strategy from a resource competition perspective. Force explicit trade-offs against alternative projects and recommend reallocation unless this proposal dominates on ROI, strategic leverage, and execution risk. Return strict JSON.",
     },
   ];
 }

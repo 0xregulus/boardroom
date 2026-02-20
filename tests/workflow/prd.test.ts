@@ -94,6 +94,10 @@ Leading indicators: add-to-cart, checkout start, payment success.
     synthesis: {
       executive_summary: "Proceed with phased rollout",
       final_recommendation: "Approved",
+      consensus_points: ["Checkout improvements align with KPI and timeline objectives."],
+      point_of_contention: "Speed-first rollout vs broader personalization scope.",
+      residual_risks: ["Vendor delivery timeline uncertainty."],
+      evidence_citations: ["Benchmark and pilot performance summary."],
       conflicts: ["Speed vs personalization trade-off"],
       blockers: [],
       required_revisions: ["Document rollout guardrails"],

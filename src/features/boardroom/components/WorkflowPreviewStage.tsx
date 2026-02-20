@@ -121,6 +121,17 @@ function normalizeSectionLabel(section: string): string {
 }
 
 function extractChairpersonCitations(activeReport: ReportWorkflowState): string[] {
+  const synthesisCitations = Array.isArray(activeReport.synthesis?.evidence_citations)
+    ? activeReport.synthesis.evidence_citations
+    : [];
+  if (synthesisCitations.length > 0) {
+    return synthesisCitations
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .slice(0, 6);
+  }
+
   const raw = asRecord(activeReport.raw);
   if (!raw || !Array.isArray(raw.chairperson_evidence_citations)) {
     return [];
@@ -219,6 +230,11 @@ export function WorkflowPreviewStage({
     : "Controls are aligned with current governance expectations.";
 
   const consensusPoints = useMemo(() => {
+    const synthesisPoints = activeReport?.synthesis?.consensus_points ?? [];
+    if (synthesisPoints.length > 0) {
+      return synthesisPoints.slice(0, 3);
+    }
+
     const points: string[] = [];
     const nonBlocked = activeReviews.filter((review) => !review.blocked);
     if (activeReviews.length > 0 && nonBlocked.length >= Math.ceil(activeReviews.length * 0.6)) {
@@ -234,9 +250,14 @@ export function WorkflowPreviewStage({
       points.push("Consensus remains limited; governance and execution confidence are still being resolved.");
     }
     return points.slice(0, 3);
-  }, [activeMetrics?.roi, activeReviews]);
+  }, [activeMetrics?.roi, activeReport?.synthesis?.consensus_points, activeReviews]);
 
   const contentionPoint = useMemo(() => {
+    const synthesisContention = activeReport?.synthesis?.point_of_contention?.trim();
+    if (synthesisContention) {
+      return synthesisContention;
+    }
+
     const interactionSummary = activeReport?.interaction_rounds?.at(-1)?.summary?.trim();
     if (interactionSummary) {
       return interactionSummary;
@@ -246,7 +267,7 @@ export function WorkflowPreviewStage({
       return blocker;
     }
     return "No major contention captured in this run.";
-  }, [activeReport?.interaction_rounds, activeReviews]);
+  }, [activeReport?.interaction_rounds, activeReport?.synthesis?.point_of_contention, activeReviews]);
 
   const evidenceItems = useMemo(() => {
     const rows: Array<{ id: string; label: string; text: string; url: string | null }> = [];
@@ -302,6 +323,8 @@ export function WorkflowPreviewStage({
 
   const riskRegister = useMemo(() => {
     const items: string[] = [];
+    const residualRisks = activeReport?.synthesis?.residual_risks ?? [];
+    residualRisks.forEach((risk) => items.push(risk));
     qualityRows
       .filter((row) => row.status !== "pass")
       .forEach((row) => items.push(row.detail));
@@ -310,7 +333,7 @@ export function WorkflowPreviewStage({
     });
     const unique = [...new Set(items.map((entry) => entry.trim()).filter((entry) => entry.length > 0))];
     return unique.slice(0, 6);
-  }, [activeReviews, qualityRows]);
+  }, [activeReport?.synthesis?.residual_risks, activeReviews, qualityRows]);
 
   const prdSections = Object.entries(activeReport?.prd?.sections ?? {});
 
@@ -477,6 +500,16 @@ export function WorkflowPreviewStage({
                 </ul>
                 <h4>Point of Contention</h4>
                 <p>{contentionPoint}</p>
+                {activeReport.synthesis?.residual_risks?.length ? (
+                  <>
+                    <h4>Residual Risks</h4>
+                    <ul>
+                      {activeReport.synthesis.residual_risks.slice(0, 3).map((risk) => (
+                        <li key={risk}>{risk}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
               </article>
 
               <article className="briefing-card citations-card">

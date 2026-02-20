@@ -7,6 +7,10 @@ export type DecisionWorkflowState = "PROPOSED" | "REVIEWING" | "SYNTHESIZED" | "
 export interface ChairpersonSynthesis {
   executive_summary: string;
   final_recommendation: "Approved" | "Challenged" | "Blocked";
+  consensus_points: string[];
+  point_of_contention: string;
+  residual_risks: string[];
+  evidence_citations: string[];
   conflicts: string[];
   blockers: string[];
   required_revisions: string[];

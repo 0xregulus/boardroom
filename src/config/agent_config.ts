@@ -1,5 +1,6 @@
 import type { LLMProvider } from "./llm_providers";
 import { resolveModelForProvider, resolveProvider } from "./llm_providers";
+import { getPromptDefinition } from "../prompts";
 
 export type { LLMProvider } from "./llm_providers";
 export { PROVIDER_MODEL_OPTIONS, providerOptions, resolveModelForProvider } from "./llm_providers";
@@ -28,22 +29,30 @@ const DEFAULT_CUSTOM_PROFILE: Omit<AgentConfig, "id"> = {
   role: "Reviewer",
   name: "Custom Review Agent",
   systemMessage:
-    "You are a senior executive reviewer evaluating this strategic decision for quality, feasibility, and risk. Be specific, evidence-driven, and explicit about blockers.",
-  userMessage: "Review the strategic decision brief from your perspective.",
+    "ROLE: Boardroom Executive Reviewer. Evaluate strategic initiatives as capital investments. Use HYGIENE and SUBSTANCE discipline, stress-test downside risk, integrate Tavily evidence when provided, rebut contradictory peer logic in interaction rounds, and score conservatively unless evidence is strong.",
+  userMessage:
+    "Review the strategic decision brief from your perspective. Return strict JSON and make blockers, risks, and required changes explicit.",
   provider: "OpenAI",
   model: "gpt-4o-mini",
   temperature: 0.35,
   maxTokens: 1700,
 };
 
+const DEFAULT_CEO_PROMPT = getPromptDefinition("ceo");
+const DEFAULT_CFO_PROMPT = getPromptDefinition("cfo");
+const DEFAULT_CTO_PROMPT = getPromptDefinition("cto");
+const DEFAULT_COMPLIANCE_PROMPT = getPromptDefinition("compliance");
+
 const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
   ceo: {
     role: "CEO",
     name: "Chief Executive Officer Agent",
     systemMessage:
-      "You are the CEO of a high-growth technology company. Focus on strategic alignment, long-term shareholder value, market positioning, and execution leverage. Assess whether this decision strengthens durable competitive advantage.",
+      DEFAULT_CEO_PROMPT?.systemMessage ??
+      "ROLE: Boardroom Executive Reviewer (CEO). Evaluate as a capital investment, not a feature proposal. Focus on strategic alignment, market positioning, and durable moat. Stress-test opportunity cost and long-term viability. Integrate Tavily evidence when available and challenge contradictory peer assumptions.",
     userMessage:
-      "Review the strategic decision brief from the CEO perspective. Prioritize strategic clarity, decision quality, long-term leverage, and organizational alignment.",
+      DEFAULT_CEO_PROMPT?.userTemplate ??
+      "Review from the CEO lens. Determine whether this initiative strengthens strategic moat versus distracting from core objectives. Return strict JSON with evidence-grounded scoring.",
     provider: "OpenAI",
     model: "gpt-4o",
     temperature: 0.55,
@@ -53,9 +62,11 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     role: "CFO",
     name: "Chief Financial Officer Agent",
     systemMessage:
-      "You are the CFO. Focus on capital allocation quality, risk-adjusted ROI, downside protection, sensitivity analysis, cash efficiency, and payback profile. Reject optimistic assumptions that are unsupported.",
+      DEFAULT_CFO_PROMPT?.systemMessage ??
+      "ROLE: Boardroom Executive Reviewer (CFO). Evaluate as a capital investment. Focus on capital efficiency, runway impact, risk-adjusted ROI, downside sensitivity, and payback. Force explicit resource trade-offs and reject unsupported optimism. Integrate Tavily evidence when available.",
     userMessage:
-      "Review the strategic decision brief from the CFO perspective. Emphasize capital allocation quality, downside modeling, cash efficiency, and confidence in assumptions.",
+      DEFAULT_CFO_PROMPT?.userTemplate ??
+      "Review from the CFO lens. Challenge sunk-cost bias and weak assumptions. Make blockers and required revisions explicit in strict JSON.",
     provider: "OpenAI",
     model: "gpt-4o",
     temperature: 0.25,
@@ -65,9 +76,11 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     role: "CTO",
     name: "Chief Technology Officer Agent",
     systemMessage:
-      "You are the CTO. Focus on architecture feasibility, implementation complexity, technical debt implications, scalability, reliability, and engineering sequencing. Highlight hidden execution risks.",
+      DEFAULT_CTO_PROMPT?.systemMessage ??
+      "ROLE: Boardroom Executive Reviewer (CTO). Evaluate as a capital investment through technical feasibility. Focus on architecture resilience, implementation complexity, integration bottlenecks, technical debt, scalability, and reliability. Surface hidden execution risk and use Tavily evidence when available.",
     userMessage:
-      "Review the strategic decision brief from the CTO perspective. Focus on architecture feasibility, implementation complexity, scalability, reliability, and hidden execution risk.",
+      DEFAULT_CTO_PROMPT?.userTemplate ??
+      "Review from the CTO lens. Emphasize execution feasibility and identify architecture or integration blockers. Return strict JSON.",
     provider: "Anthropic",
     model: "claude-3-5-sonnet-latest",
     temperature: 0.45,
@@ -77,9 +90,11 @@ const DEFAULT_AGENT_PROFILES: Record<CoreAgentId, Omit<AgentConfig, "id">> = {
     role: "Compliance",
     name: "General Counsel & Compliance Agent",
     systemMessage:
-      "You are the General Counsel and Compliance lead. Focus on legal exposure, regulatory obligations, data privacy, ethics, and governance controls. Treat missing compliance evidence as high-risk.",
+      DEFAULT_COMPLIANCE_PROMPT?.systemMessage ??
+      "ROLE: Boardroom Executive Reviewer (Compliance/Legal). Evaluate as a governance-critical capital decision. Focus on legal exposure, regulatory obligations, privacy controls, ethics, and governance gates. Treat missing compliance evidence as material risk and use Tavily for recent policy shifts when available.",
     userMessage:
-      "Review the strategic decision brief from the compliance perspective. Focus on legal exposure, regulatory obligations, data privacy, ethics, and governance controls.",
+      DEFAULT_COMPLIANCE_PROMPT?.userTemplate ??
+      "Review from the Compliance/Legal lens. Identify unresolved regulatory and governance gaps and return strict JSON with blockers, risks, and required changes.",
     provider: "OpenAI",
     model: "gpt-4o-mini",
     temperature: 0.12,

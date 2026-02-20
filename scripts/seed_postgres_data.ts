@@ -315,6 +315,16 @@ export const SEED_DECISIONS: SeedDecision[] = [
       synthesis: {
         executive_summary: "Board review indicates strong strategic fit, manageable risk, and favorable economics for a phased rollout.",
         final_recommendation: "Approved",
+        consensus_points: [
+          "Strategic alignment with margin protection and service quality goals.",
+          "Phased rollout with governance gates is the right deployment strategy.",
+        ],
+        point_of_contention: "",
+        residual_risks: ["Model drift after upstream model updates.", "Knowledge-base freshness affecting response quality."],
+        evidence_citations: [
+          "Pilot SLA and quality trend reports.",
+          "Risk register with mitigation owners and review cadence.",
+        ],
         conflicts: [],
         blockers: [],
         required_revisions: ["Add cohort-level retention reporting to monthly governance packet."],
@@ -399,6 +409,16 @@ export const SEED_DECISIONS: SeedDecision[] = [
       synthesis: {
         executive_summary: "Board review identified unresolved financial and compliance blockers, so the proposal is blocked.",
         final_recommendation: "Blocked",
+        consensus_points: [
+          "Current control design is insufficient for safe rollout.",
+          "Pilot scope should be narrowed before additional exposure.",
+        ],
+        point_of_contention: "Growth urgency conflicts with finance and compliance risk thresholds.",
+        residual_risks: ["Material conversion downside under moderate elasticity assumptions.", "Customer trust risk from disclosure gaps."],
+        evidence_citations: [
+          "Elasticity sensitivity analysis showing unstable upside.",
+          "Compliance review notes on disclosure and fairness coverage gaps.",
+        ],
         conflicts: ["Finance requests narrower pilots while growth prefers faster rollout."],
         blockers: ["Insufficient elasticity granularity", "Incomplete compliance disclosure controls"],
         required_revisions: ["Deliver segmented elasticity model", "Publish disclosure and exception policy"],

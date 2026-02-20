@@ -1,6 +1,4 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
+import { getPromptDefinition } from "../prompts";
 import { reviewOutputSchema, type ReviewOutput } from "../schemas/review_output";
 
 export interface PromptPayload {
@@ -8,27 +6,15 @@ export interface PromptPayload {
   userTemplate: string;
 }
 
-const SYSTEM_MARKER = "## System Message";
-const USER_MARKER = "## User Message Template";
-
-function normalizeSection(section: string): string {
-  return section.trim().replace(/^---\s*/g, "").trim();
-}
-
 export async function loadPrompts(agentName: string): Promise<PromptPayload> {
-  const promptFile = path.join(process.cwd(), "src", "prompts", `${agentName.toLowerCase()}_v3.md`);
-  const content = await readFile(promptFile, "utf8");
-
-  const systemStart = content.indexOf(SYSTEM_MARKER);
-  const userStart = content.indexOf(USER_MARKER);
-
-  if (systemStart === -1 || userStart === -1) {
-    throw new Error(`Prompt sections missing in ${promptFile}`);
+  const prompt = getPromptDefinition(agentName);
+  if (!prompt) {
+    throw new Error(`Prompt definition not found for agent "${agentName}"`);
   }
 
   return {
-    systemMessage: normalizeSection(content.slice(systemStart + SYSTEM_MARKER.length, userStart)),
-    userTemplate: normalizeSection(content.slice(userStart + USER_MARKER.length)),
+    systemMessage: prompt.systemMessage,
+    userTemplate: prompt.userTemplate,
   };
 }
 

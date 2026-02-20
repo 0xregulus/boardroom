@@ -25,6 +25,10 @@ export function buildPrdOutput(state: WorkflowState): PRDOutput {
   const synthesis = state.synthesis ?? {
     executive_summary: "",
     final_recommendation: "Challenged",
+    consensus_points: [],
+    point_of_contention: "",
+    residual_risks: [],
+    evidence_citations: [],
     conflicts: [],
     blockers: [],
     required_revisions: [],

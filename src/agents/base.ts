@@ -379,6 +379,10 @@ export class ConfiguredChairpersonAgent extends BaseAgent {
     const fallback: ChairpersonSynthesis = {
       executive_summary: "Chair synthesis failed; manual review required.",
       final_recommendation: "Challenged",
+      consensus_points: [],
+      point_of_contention: "",
+      residual_risks: [],
+      evidence_citations: [],
       conflicts: [],
       blockers: [],
       required_revisions: [],

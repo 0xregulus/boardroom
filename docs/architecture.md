@@ -46,7 +46,7 @@ sequenceDiagram
 - Run normalized review-agent configs (core agents plus optional custom reviewers).
 - Agent runtime config (provider/model/system/user/temperature/max tokens) comes from `agent_configs`, with defaults when no persisted config exists.
 - Each agent uses its configured provider client (`OpenAI`, `Anthropic`, `Mistral`, `Meta`).
-- Prompt templates are configurable per agent; prompt markdown in `src/prompts/*_v3.md` is used as a fallback.
+- Prompt templates are configurable per agent; typed prompt definitions in `src/prompts/registry.ts` are the runtime source of truth.
 - When `TAVILY_API_KEY` is configured and `includeExternalResearch` is `true` (default `false`), each review agent runs a Tavily search and receives recent external evidence with source URLs in prompt context.
 - Remote workflow runs can require explicit approval via `x-boardroom-run-approval` depending on policy env vars.
 - Bulk run execution is capped by `BOARDROOM_MAX_BULK_RUN_DECISIONS`.
@@ -105,6 +105,7 @@ sequenceDiagram
 - `src/config/llm_providers.ts` provider/model/env-key registry
 - `src/llm/client.ts` provider client implementations
 - `src/agents/base.ts` agent execution + parsing
+- `src/prompts/registry.ts` typed prompt registry (system/user templates + versions)
 - `src/workflow/prd.ts` PRD synthesis helpers
 - `src/workflow/gates.ts` governance checks
 - `src/store/postgres.ts` PostgreSQL schema + repository functions

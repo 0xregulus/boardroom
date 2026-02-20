@@ -1652,6 +1652,10 @@ export async function loadPersistedDecisionOutputs(decisionId: string): Promise<
     ? {
         executive_summary: synthesisRow.executive_summary,
         final_recommendation: synthesisRow.final_recommendation,
+        consensus_points: [],
+        point_of_contention: "",
+        residual_risks: [],
+        evidence_citations: [],
         conflicts: toStringArray(synthesisRow.conflicts),
         blockers: toStringArray(synthesisRow.blockers),
         required_revisions: toStringArray(synthesisRow.required_revisions),
