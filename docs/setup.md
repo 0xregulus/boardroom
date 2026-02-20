@@ -1,9 +1,16 @@
 # Setup and Operations
 
+## Non-Technical Quick Start
+- Zero data start: `npm run local:start`
+- Demo data start: `npm run local:start:demo`
+- Fresh reset to zero data: `npm run local:start:fresh`
+- macOS double-click launcher: `Start-Boardroom.command`
+- Detailed walkthrough: [non-technical-local-run.md](non-technical-local-run.md)
+
 ## Prerequisites
 - Node.js 20+
 - npm
-- PostgreSQL instance reachable by `POSTGRES_URL`
+- PostgreSQL instance reachable by `POSTGRES_URL` (or Docker Desktop for the built-in local PostgreSQL via `docker-compose.yml`)
 
 ## Environment
 
@@ -38,6 +45,12 @@ npm install
 
 ```bash
 npm run db:seed -- --reset
+```
+
+Reset to zero data:
+
+```bash
+npm run db:reset
 ```
 
 ## Run

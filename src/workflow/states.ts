@@ -1,5 +1,6 @@
 import { AgentConfig } from "../config/agent_config";
 import { DecisionSnapshot, PRDOutput, ReviewOutput } from "../schemas";
+import { HygieneFinding } from "./hygiene";
 
 export type DecisionWorkflowState = "PROPOSED" | "REVIEWING" | "SYNTHESIZED" | "DECIDED" | "PERSISTED";
 
@@ -9,6 +10,20 @@ export interface ChairpersonSynthesis {
   conflicts: string[];
   blockers: string[];
   required_revisions: string[];
+}
+
+export interface DecisionAncestryMatch {
+  decision_id: string;
+  decision_name: string;
+  similarity: number;
+  outcome: {
+    gate_decision: string | null;
+    final_recommendation: "Approved" | "Challenged" | "Blocked" | null;
+    dqs: number | null;
+    run_at: string;
+  };
+  lessons: string[];
+  summary: string;
 }
 
 export interface AgentInteractionDelta {
@@ -27,6 +42,38 @@ export interface AgentInteractionRound {
   deltas: AgentInteractionDelta[];
 }
 
+export interface WorkflowMarketIntelligenceSignal {
+  analyst: string;
+  lens: string;
+  query: string;
+  highlights: string[];
+  source_urls: string[];
+}
+
+export interface WorkflowMarketIntelligence {
+  generated_at: string;
+  highlights: string[];
+  source_urls: string[];
+  signals: WorkflowMarketIntelligenceSignal[];
+}
+
+export interface WorkflowEvidenceVerificationAgentResult {
+  agent_id: string;
+  agent_name: string;
+  verdict: "sufficient" | "insufficient";
+  citation_count: number;
+  risk_evidence_count: number;
+  gaps: string[];
+}
+
+export interface WorkflowEvidenceVerification {
+  generated_at: string;
+  verdict: "sufficient" | "insufficient";
+  summary: string;
+  required_actions: string[];
+  by_agent: WorkflowEvidenceVerificationAgentResult[];
+}
+
 export interface WorkflowState {
   decision_id: string;
   user_context: Record<string, unknown>;
@@ -41,6 +88,18 @@ export interface WorkflowState {
   missing_sections: string[];
   decision_name: string;
   interaction_rounds: AgentInteractionRound[];
+  decision_ancestry?: DecisionAncestryMatch[];
+  decision_ancestry_retrieval_method?: "vector-db" | "lexical-fallback";
+  hygiene_score?: number;
+  substance_score?: number;
+  confidence_score?: number;
+  dissent_penalty?: number;
+  confidence_penalty?: number;
+  hygiene_findings?: HygieneFinding[];
+  artifact_assistant_questions?: string[];
+  chairperson_evidence_citations?: string[];
+  market_intelligence?: WorkflowMarketIntelligence | null;
+  evidence_verification?: WorkflowEvidenceVerification | null;
 }
 
 export interface RunWorkflowOptions {
@@ -54,4 +113,5 @@ export interface RunWorkflowOptions {
   agentConfigs?: AgentConfig[];
   includeExternalResearch?: boolean;
   interactionRounds?: number;
+  includeRedTeamPersonas?: boolean;
 }

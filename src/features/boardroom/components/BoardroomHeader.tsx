@@ -73,7 +73,7 @@ export function BoardroomHeader({
               className={activeTab === "editor" ? "active" : ""}
               onClick={() => onSetActiveTab("editor")}
             >
-              Workflow Editor
+              Workflow
             </button>
             <button
               type="button"
@@ -82,7 +82,7 @@ export function BoardroomHeader({
               className={activeTab === "preview" ? "active" : ""}
               onClick={() => onSetActiveTab("preview")}
             >
-              Output Preview
+              Report
             </button>
           </div>
 

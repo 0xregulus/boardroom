@@ -6,6 +6,12 @@ export interface ReviewRisk {
   evidence: string;
 }
 
+export interface ReviewCitation {
+  url: string;
+  title: string;
+  claim: string;
+}
+
 export interface ReviewOutput {
   agent: string;
   thesis: string;
@@ -14,6 +20,7 @@ export interface ReviewOutput {
   blocked: boolean;
   blockers: string[];
   risks: ReviewRisk[];
+  citations: ReviewCitation[];
   required_changes: string[];
   approval_conditions: string[];
   apga_impact_view: string;
@@ -26,6 +33,12 @@ export const reviewRiskSchema = z.object({
   evidence: z.string(),
 });
 
+export const reviewCitationSchema = z.object({
+  url: z.string().min(1),
+  title: z.string().default(""),
+  claim: z.string().default(""),
+});
+
 export const reviewOutputSchema = z.object({
   agent: z.string(),
   thesis: z.string(),
@@ -34,6 +47,7 @@ export const reviewOutputSchema = z.object({
   blocked: z.boolean(),
   blockers: z.array(z.string()).default([]),
   risks: z.array(reviewRiskSchema).default([]),
+  citations: z.array(reviewCitationSchema).default([]),
   required_changes: z.array(z.string()).default([]),
   approval_conditions: z.array(z.string()).default([]),
   apga_impact_view: z.string(),

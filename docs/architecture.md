@@ -38,6 +38,8 @@ sequenceDiagram
 - Fetch decision metadata + body text from PostgreSQL (`decisions`, `decision_documents`).
 - Infer governance gates from text.
 - Auto-mark inferred governance checks in `decision_governance_checks`.
+- Retrieve top similar prior decisions + outcomes via vector-memory similarity from `decision_ancestry_embeddings` (with lexical fallback).
+- Compute automated hygiene checks (financial consistency + metadata/document coherence), including structured table parsing for projected-revenue vs market-size sanity checks.
 - Move decision status to `Under Evaluation` or `Incomplete`.
 
 2. `executive_review`
@@ -57,16 +59,22 @@ sequenceDiagram
 
 4. `synthesize_reviews`
 - Chairperson agent produces executive summary and final recommendation.
+- Weighted conflict resolution gives stronger effect to risk/compliance dissent than growth optimism.
+- Chairperson output is required to include evidence citations sourced from reviewer theses/blockers/revisions.
 
 5. `calculate_dqs`
-- DQS is a weighted mean over configured review agents:
+- DQS starts from a weighted mean over configured review agents:
   - core weights: `CEO=0.30`, `CFO=0.25`, `CTO=0.25`, `Compliance=0.20`
   - each additional custom reviewer uses weight `0.20`
   - `DQS = SUM(score_i * weight_i) / SUM(weight_i)`
+- Then applies weighted conflict adjustments:
+  - dissent penalties (CFO/Compliance dissent weighted highest)
+  - confidence penalties (low specialized-agent confidence)
+  - hygiene blend (automated hygiene score contributes to final DQS)
 
 6. gate decision
 - `Blocked` if any review blocks.
-- `Challenged` if `DQS < 7.0`.
+- `Challenged` if hygiene/confidence guardrails fail or `DQS < 7.0`.
 - `Approved` otherwise.
 
 7. `generate_prd` (approved only)
@@ -81,6 +89,8 @@ sequenceDiagram
 ## Runtime Surfaces
 
 - Web UI: `/`
+- Workflow Editor: full-page execution monitor with Decision Pulse canvas, persistent control aside, and unified Execution Trace.
+- Report: Live Governance Briefing (Outcome -> Scorecard -> Debate/Evidence -> Artifacts) in a three-column layout.
 - API: `POST /api/workflow/run`
 - API: `GET /api/workflow/runs` (decision run history)
 - API: `GET /api/strategies`

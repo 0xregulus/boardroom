@@ -234,6 +234,31 @@ describe("API /api/workflow/run", () => {
     expect(mock.statusCode).toBe(200);
   });
 
+  it("passes includeRedTeamPersonas when provided", async () => {
+    mocks.getPersistedAgentConfigs.mockResolvedValueOnce([{ id: "ceo" }]);
+    mocks.normalizeAgentConfigs.mockReturnValueOnce([{ id: "ceo" }]);
+    mocks.runDecisionWorkflow.mockResolvedValueOnce({ decision_id: "d-1" });
+
+    const req = createMockRequest({
+      method: "POST",
+      body: {
+        decisionId: "d-1",
+        includeRedTeamPersonas: true,
+      },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    expect(mocks.runDecisionWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decisionId: "d-1",
+        includeRedTeamPersonas: true,
+      }),
+    );
+    expect(mock.statusCode).toBe(200);
+  });
+
   it("returns full workflow state when includeSensitive=true", async () => {
     mocks.getPersistedAgentConfigs.mockResolvedValueOnce([{ id: "ceo" }]);
     mocks.normalizeAgentConfigs.mockReturnValueOnce([{ id: "ceo" }]);
@@ -287,7 +312,7 @@ describe("API /api/workflow/run", () => {
       method: "POST",
       body: {
         decisionId: "d-1",
-        interactionRounds: 4,
+        interactionRounds: 11,
       },
     });
     const mock = createMockResponse();

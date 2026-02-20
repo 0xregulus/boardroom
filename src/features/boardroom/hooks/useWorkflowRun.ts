@@ -20,6 +20,7 @@ interface UseWorkflowRunResult {
   expandedNodeId: string | null;
   decisionId: string;
   includeExternalResearch: boolean;
+  includeRedTeamPersonas: boolean;
   interactionRounds: number;
   previewIndex: number;
   isRunning: boolean;
@@ -29,6 +30,7 @@ interface UseWorkflowRunResult {
   runLabel: string;
   setDecisionId: (value: string) => void;
   setIncludeExternalResearch: (value: boolean) => void;
+  setIncludeRedTeamPersonas: (value: boolean) => void;
   setInteractionRounds: (value: number) => void;
   setPreviewIndex: (index: number) => void;
   handleNodeClick: (node: WorkflowNode) => void;
@@ -49,7 +51,8 @@ export function useWorkflowRun({
   const [nodes, setNodes] = useState<WorkflowNode[]>(() => buildInitialNodes(null));
   const [decisionId, setDecisionId] = useState("");
   const [includeExternalResearch, setIncludeExternalResearch] = useState(false);
-  const [interactionRounds, setInteractionRounds] = useState(1);
+  const [includeRedTeamPersonas, setIncludeRedTeamPersonas] = useState(false);
+  const [interactionRounds, setInteractionRounds] = useState(5);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -67,6 +70,27 @@ export function useWorkflowRun({
     }
     return "Execute Pipeline";
   }, [isRunning]);
+
+  const effectiveReviewRoleLabels = useMemo(() => {
+    const labels = reviewRoleLabels
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const normalized = new Set(labels.map((entry) => entry.toLowerCase()));
+    if (includeRedTeamPersonas) {
+      if (!normalized.has("pre-mortem")) {
+        labels.push("Pre-Mortem");
+      }
+      if (!normalized.has("resource competitor")) {
+        labels.push("Resource Competitor");
+      }
+    }
+    return labels;
+  }, [reviewRoleLabels, includeRedTeamPersonas]);
+
+  const effectiveReviewSummary = useMemo(
+    () => (effectiveReviewRoleLabels.length > 0 ? effectiveReviewRoleLabels.join(", ") : reviewSummary),
+    [effectiveReviewRoleLabels, reviewSummary],
+  );
 
   useEffect(() => {
     setPreviewIndex(0);
@@ -111,7 +135,7 @@ export function useWorkflowRun({
   }, [interactionRounds]);
 
   useEffect(() => {
-    const nextTasks = buildReviewTasks(reviewRoleLabels);
+    const nextTasks = buildReviewTasks(effectiveReviewRoleLabels);
 
     setNodes((prev) =>
       prev.map((node) => {
@@ -126,12 +150,12 @@ export function useWorkflowRun({
 
         return {
           ...node,
-          subtitle: reviewSummary,
+          subtitle: effectiveReviewSummary,
           tasks: mergedTasks,
         };
       }),
     );
-  }, [reviewRoleLabels, reviewSummary]);
+  }, [effectiveReviewRoleLabels, effectiveReviewSummary]);
 
   useEffect(() => {
     if (!isRunning || !reviewNode || reviewNode.status !== "RUNNING" || (reviewNode.tasks?.length ?? 0) <= 1) {
@@ -195,7 +219,7 @@ export function useWorkflowRun({
     const timestamp = new Date().toLocaleTimeString([], { hour12: false });
     setSelectedNodeId("1");
     setExpandedNodeId(null);
-    setNodes(buildInitialNodes(strategy.name, reviewRoleLabels, interactionRounds));
+    setNodes(buildInitialNodes(strategy.name, effectiveReviewRoleLabels, interactionRounds));
     setLogLines([`${timestamp}  Context loaded: ${strategy.name} (${strategy.id})`]);
   }
 
@@ -221,7 +245,7 @@ export function useWorkflowRun({
   }
 
   async function runParallelReviewStep(message: string): Promise<void> {
-    const reviewTasks = buildReviewTasks(reviewRoleLabels);
+    const reviewTasks = buildReviewTasks(effectiveReviewRoleLabels);
 
     updateNodeStatus("3", "RUNNING");
     setExpandedNodeId("3");
@@ -231,7 +255,7 @@ export function useWorkflowRun({
         node.id === "3"
           ? {
             ...node,
-            subtitle: reviewSummary,
+            subtitle: effectiveReviewSummary,
             tasks: reviewTasks.map((task) => ({ ...task, status: "RUNNING" })),
           }
           : node,
@@ -303,7 +327,7 @@ export function useWorkflowRun({
     setError(null);
     setResult(null);
     setLogLines([]);
-    setNodes(buildInitialNodes(selectedStrategy?.name ?? null, reviewRoleLabels, interactionRounds));
+    setNodes(buildInitialNodes(selectedStrategy?.name ?? null, effectiveReviewRoleLabels, interactionRounds));
     setSelectedNodeId("1");
     setExpandedNodeId(null);
 
@@ -313,11 +337,13 @@ export function useWorkflowRun({
       decisionId?: string;
       agentConfigs: AgentConfig[];
       includeExternalResearch: boolean;
+      includeRedTeamPersonas: boolean;
       includeSensitive: boolean;
       interactionRounds: number;
     } = {
       agentConfigs,
       includeExternalResearch: externalResearchEnabledForRun,
+      includeRedTeamPersonas,
       includeSensitive: true,
       interactionRounds,
     };
@@ -335,7 +361,7 @@ export function useWorkflowRun({
     try {
       await runStep(
         "1",
-        `${inputSummary} | External research: ${externalResearchEnabledForRun ? "On" : "Off"} | Rebuttal rounds: ${interactionRounds}`,
+        `${inputSummary} | External research: ${externalResearchEnabledForRun ? "On" : "Off"} | Red team: ${includeRedTeamPersonas ? "On" : "Off"} | Rebuttal rounds: ${interactionRounds}`,
         350,
       );
       await runStep("2", "Drafting strategic decision document", 450);
@@ -380,6 +406,7 @@ export function useWorkflowRun({
     expandedNodeId,
     decisionId,
     includeExternalResearch,
+    includeRedTeamPersonas,
     interactionRounds,
     previewIndex,
     isRunning,
@@ -389,6 +416,7 @@ export function useWorkflowRun({
     runLabel,
     setDecisionId,
     setIncludeExternalResearch,
+    setIncludeRedTeamPersonas,
     setInteractionRounds,
     setPreviewIndex,
     handleNodeClick,

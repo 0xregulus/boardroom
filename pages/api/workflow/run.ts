@@ -13,6 +13,7 @@ interface RunBody {
   temperature?: number;
   maxTokens?: number;
   interactionRounds?: number;
+  includeRedTeamPersonas?: boolean;
   agentConfigs?: AgentConfig[];
   includeExternalResearch?: boolean;
   includeSensitive?: boolean;
@@ -36,7 +37,8 @@ const runBodySchema = z
       .optional(),
     temperature: z.number().finite().min(0).max(1).optional(),
     maxTokens: z.number().int().min(256).max(8000).optional(),
-    interactionRounds: z.number().int().min(0).max(3).optional(),
+    interactionRounds: z.number().int().min(0).max(10).optional(),
+    includeRedTeamPersonas: z.boolean().optional(),
     agentConfigs: z.array(z.unknown()).max(32).optional(),
     includeExternalResearch: z.boolean().optional(),
     includeSensitive: z.boolean().optional(),
@@ -168,6 +170,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         temperature: body.temperature,
         maxTokens: body.maxTokens,
         interactionRounds: body.interactionRounds,
+        includeRedTeamPersonas: body.includeRedTeamPersonas,
         agentConfigs,
         includeExternalResearch,
       });
@@ -184,6 +187,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       temperature: body.temperature,
       maxTokens: body.maxTokens,
       interactionRounds: body.interactionRounds,
+      includeRedTeamPersonas: body.includeRedTeamPersonas,
       agentConfigs,
       includeExternalResearch,
     });

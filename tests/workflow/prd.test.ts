@@ -13,6 +13,7 @@ function review(overrides: Partial<ReviewOutput> = {}): ReviewOutput {
     blocked: false,
     blockers: [],
     risks: [],
+    citations: [],
     required_changes: [],
     approval_conditions: [],
     apga_impact_view: "Positive",

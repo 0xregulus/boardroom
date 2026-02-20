@@ -91,6 +91,7 @@ function review(
   extra: {
     blockers?: string[];
     risks?: Array<{ type: string; severity: number; evidence: string }>;
+    citations?: ReviewOutput["citations"];
     requiredChanges?: string[];
     approvalConditions?: string[];
   } = {},
@@ -103,6 +104,7 @@ function review(
     blocked,
     blockers: extra.blockers ?? [],
     risks: extra.risks ?? [],
+    citations: extra.citations ?? [],
     required_changes: extra.requiredChanges ?? [],
     approval_conditions: extra.approvalConditions ?? [],
     apga_impact_view: blocked ? "Near-term APGA protection; growth delayed pending corrective actions." : "Positive APGA impact expected within one quarter.",

@@ -6,6 +6,7 @@ import type {
 } from "../types";
 import { CreateStrategyArtifactSections } from "./CreateStrategyArtifactSections";
 import { CreateStrategyConfigPanels } from "./CreateStrategyConfigPanels";
+import { CreateStrategySocraticAssistant } from "./CreateStrategySocraticAssistant";
 
 interface CreateStrategyStageProps {
   createDraft: CreateStrategyDraft;
@@ -94,6 +95,12 @@ export function CreateStrategyStage({
               onUpdateRiskProperty={onUpdateRiskProperty}
             />
 
+            <CreateStrategySocraticAssistant
+              createDraft={createDraft}
+              isCreateReadOnly={isCreateReadOnly}
+              onUpdateSection={onUpdateSection}
+            />
+
             <CreateStrategyArtifactSections
               createDraft={createDraft}
               isCreateReadOnly={isCreateReadOnly}
@@ -106,16 +113,16 @@ export function CreateStrategyStage({
               {isCreateReadOnly ? (
                 <>
                   <button type="button" className="create-save-button" onClick={onRunAnalysis}>
-                    Run Analysis Pipeline
+                    Run Analysis
                   </button>
                   <button type="button" className="create-cancel-button" onClick={onCancel}>
-                    Back to Strategic Decisions
+                    Back
                   </button>
                 </>
               ) : (
                 <>
                   <button type="button" className="create-save-button" onClick={onSave}>
-                    Save Strategy Document
+                    Save
                   </button>
                   <button type="button" className="create-cancel-button" onClick={onCancel}>
                     Cancel

@@ -32,6 +32,7 @@ const validReviewJson = JSON.stringify({
   blocked: false,
   blockers: [],
   risks: [],
+  citations: [],
   required_changes: [],
   approval_conditions: [],
   apga_impact_view: "Positive",

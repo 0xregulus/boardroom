@@ -16,6 +16,7 @@ import { SEED_DECISIONS, type SeedDecision } from "./seed_postgres_data";
 
 interface CliArgs {
   reset: boolean;
+  truncateOnly: boolean;
 }
 
 let scriptPool: Pool | null = null;
@@ -46,10 +47,17 @@ async function closeScriptPool(): Promise<void> {
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     reset: false,
+    truncateOnly: false,
   };
 
   for (const arg of argv) {
     if (arg === "--reset") {
+      args.reset = true;
+      continue;
+    }
+
+    if (arg === "--truncate-only") {
+      args.truncateOnly = true;
       args.reset = true;
       continue;
     }
@@ -66,8 +74,9 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 function printUsage(): void {
-  console.log("Usage: npm run db:seed -- [--reset]");
+  console.log("Usage: npm run db:seed -- [--reset] [--truncate-only]");
   console.log("  --reset   Truncate seeded decision tables before inserting fixtures.");
+  console.log("  --truncate-only   Truncate seeded decision tables and exit without inserting fixtures.");
 }
 
 async function resetDecisionTables(): Promise<void> {
@@ -137,6 +146,11 @@ async function main(): Promise<void> {
   if (args.reset) {
     await resetDecisionTables();
     console.log("[seed] Truncated existing decision tables.");
+  }
+
+  if (args.truncateOnly) {
+    console.log("[seed] Done (no fixtures inserted).");
+    return;
   }
 
   for (const decision of SEED_DECISIONS) {

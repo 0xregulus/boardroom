@@ -30,6 +30,30 @@ export interface DecisionForWorkflow {
   governanceChecks: Record<string, boolean>;
 }
 
+export interface DecisionAncestryCandidate {
+  id: string;
+  name: string;
+  summary: string;
+  bodyText: string;
+  gateDecision: string | null;
+  dqs: number | null;
+  finalRecommendation: "Approved" | "Challenged" | "Blocked" | null;
+  executiveSummary: string;
+  blockers: string[];
+  requiredRevisions: string[];
+  lastRunAt: string;
+}
+
+export interface DecisionAncestryEmbedding {
+  decisionId: string;
+  sourceHash: string;
+  embeddingModel: string;
+  embeddingProvider: string;
+  embeddingDimensions: number;
+  embedding: number[];
+  updatedAt: string;
+}
+
 export interface DecisionUpsertInput {
   id: string;
   name: string;
@@ -102,6 +126,7 @@ CREATE TABLE IF NOT EXISTS decision_reviews (
   blocked BOOLEAN NOT NULL DEFAULT FALSE,
   blockers JSONB NOT NULL DEFAULT '[]'::jsonb,
   risks JSONB NOT NULL DEFAULT '[]'::jsonb,
+  citations JSONB NOT NULL DEFAULT '[]'::jsonb,
   required_changes JSONB NOT NULL DEFAULT '[]'::jsonb,
   approval_conditions JSONB NOT NULL DEFAULT '[]'::jsonb,
   apga_impact_view TEXT NOT NULL DEFAULT '',
@@ -145,6 +170,18 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS decision_ancestry_embeddings (
+  decision_id TEXT PRIMARY KEY REFERENCES decisions(id) ON DELETE CASCADE,
+  source_hash TEXT NOT NULL,
+  source_text TEXT NOT NULL DEFAULT '',
+  embedding_provider TEXT NOT NULL,
+  embedding_model TEXT NOT NULL,
+  embedding_dimensions INTEGER NOT NULL CHECK (embedding_dimensions >= 1),
+  embedding_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS rate_limits (
   bucket_key TEXT PRIMARY KEY,
   count INTEGER NOT NULL,
@@ -166,12 +203,16 @@ CREATE TABLE IF NOT EXISTS agent_configs (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE decision_reviews
+  ADD COLUMN IF NOT EXISTS citations JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 CREATE INDEX IF NOT EXISTS decisions_status_idx ON decisions(status);
 CREATE INDEX IF NOT EXISTS decisions_review_date_idx ON decisions(review_date DESC);
 CREATE INDEX IF NOT EXISTS decision_reviews_decision_idx ON decision_reviews(decision_id);
 CREATE INDEX IF NOT EXISTS workflow_runs_decision_idx ON workflow_runs(decision_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS rate_limits_reset_idx ON rate_limits(reset_at);
 CREATE INDEX IF NOT EXISTS agent_configs_updated_idx ON agent_configs(updated_at DESC);
+CREATE INDEX IF NOT EXISTS decision_ancestry_embeddings_updated_idx ON decision_ancestry_embeddings(updated_at DESC);
 `;
 
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {
@@ -343,6 +384,67 @@ function toStringArray(value: unknown): string[] {
       const parsed = JSON.parse(value) as unknown;
       if (Array.isArray(parsed)) {
         return parsed.filter((entry): entry is string => typeof entry === "string");
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function toCitationsArray(value: unknown): ReviewOutput["citations"] {
+  const parsedValue = (() => {
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        return null;
+      }
+    }
+    return value;
+  })();
+
+  if (!Array.isArray(parsedValue)) {
+    return [];
+  }
+
+  const citations: ReviewOutput["citations"] = [];
+  for (const entry of parsedValue) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const url = asString(record.url).trim();
+    if (!url) {
+      continue;
+    }
+
+    citations.push({
+      url,
+      title: asString(record.title).slice(0, 220),
+      claim: asString(record.claim).slice(0, 500),
+    });
+  }
+
+  return citations.slice(0, 8);
+}
+
+function toNumberArray(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === "number" && Number.isFinite(entry) ? entry : Number(entry)))
+      .filter((entry): entry is number => Number.isFinite(entry));
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((entry) => (typeof entry === "number" && Number.isFinite(entry) ? entry : Number(entry)))
+          .filter((entry): entry is number => Number.isFinite(entry));
       }
     } catch {
       return [];
@@ -662,6 +764,30 @@ interface DecisionIdRow extends QueryResultRow {
   id: string;
 }
 
+interface DecisionAncestryRow extends QueryResultRow {
+  id: string;
+  name: string;
+  summary: string | null;
+  body_text: string | null;
+  gate_decision: string | null;
+  dqs: string | number | null;
+  final_recommendation: "Approved" | "Challenged" | "Blocked" | null;
+  executive_summary: string | null;
+  blockers: unknown;
+  required_revisions: unknown;
+  last_run_at: Date | string | null;
+}
+
+interface DecisionAncestryEmbeddingRow extends QueryResultRow {
+  decision_id: string;
+  source_hash: string;
+  embedding_provider: string;
+  embedding_model: string;
+  embedding_dimensions: number | string;
+  embedding_json: unknown;
+  updated_at: Date | string | null;
+}
+
 export async function listProposedDecisionIds(): Promise<string[]> {
   const result = await query<DecisionIdRow>(
     `
@@ -674,6 +800,207 @@ export async function listProposedDecisionIds(): Promise<string[]> {
   );
 
   return result.rows.map((row) => row.id);
+}
+
+export async function listDecisionAncestryCandidates(
+  decisionId: string,
+  limit = 50,
+): Promise<DecisionAncestryCandidate[]> {
+  const normalizedDecisionId = typeof decisionId === "string" ? decisionId.trim() : "";
+  if (normalizedDecisionId.length === 0) {
+    throw new Error("decisionId is required");
+  }
+
+  const normalizedLimit = Math.max(1, Math.min(250, Number.isFinite(limit) ? Math.round(limit) : 50));
+
+  const result = await query<DecisionAncestryRow>(
+    `
+      SELECT
+        d.id,
+        d.name,
+        d.summary,
+        doc.body_text,
+        latest_run.gate_decision,
+        latest_run.dqs,
+        latest_run.created_at AS last_run_at,
+        ds.final_recommendation,
+        ds.executive_summary,
+        ds.blockers,
+        ds.required_revisions
+      FROM decisions d
+      LEFT JOIN decision_documents doc
+        ON doc.decision_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT wr.gate_decision, wr.dqs, wr.created_at
+        FROM workflow_runs wr
+        WHERE wr.decision_id = d.id
+        ORDER BY wr.created_at DESC
+        LIMIT 1
+      ) AS latest_run
+        ON TRUE
+      LEFT JOIN decision_synthesis ds
+        ON ds.decision_id = d.id
+      WHERE d.id <> $1
+      ORDER BY COALESCE(latest_run.created_at, d.review_date, d.created_at) DESC
+      LIMIT $2
+    `,
+    [normalizedDecisionId, normalizedLimit],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: asString(row.name, "").trim() || `Decision ${row.id.slice(0, 8)}`,
+    summary: asString(row.summary, "").trim(),
+    bodyText: asString(row.body_text, ""),
+    gateDecision: typeof row.gate_decision === "string" ? row.gate_decision : null,
+    dqs: toNumber(row.dqs),
+    finalRecommendation: row.final_recommendation,
+    executiveSummary: asString(row.executive_summary, "").trim(),
+    blockers: toStringArray(row.blockers),
+    requiredRevisions: toStringArray(row.required_revisions),
+    lastRunAt: toIsoTimestamp(row.last_run_at),
+  }));
+}
+
+export async function getDecisionAncestryEmbedding(decisionId: string): Promise<DecisionAncestryEmbedding | null> {
+  const normalizedDecisionId = typeof decisionId === "string" ? decisionId.trim() : "";
+  if (normalizedDecisionId.length === 0) {
+    throw new Error("decisionId is required");
+  }
+
+  const result = await query<DecisionAncestryEmbeddingRow>(
+    `
+      SELECT
+        decision_id,
+        source_hash,
+        embedding_provider,
+        embedding_model,
+        embedding_dimensions,
+        embedding_json,
+        updated_at
+      FROM decision_ancestry_embeddings
+      WHERE decision_id = $1
+      LIMIT 1
+    `,
+    [normalizedDecisionId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    decisionId: row.decision_id,
+    sourceHash: asString(row.source_hash, ""),
+    embeddingProvider: asString(row.embedding_provider, ""),
+    embeddingModel: asString(row.embedding_model, ""),
+    embeddingDimensions: Math.max(1, Math.round(toNumber(row.embedding_dimensions) ?? 0)),
+    embedding: toNumberArray(row.embedding_json),
+    updatedAt: toIsoTimestamp(row.updated_at),
+  };
+}
+
+export async function listDecisionAncestryEmbeddings(
+  decisionIds: string[],
+): Promise<Record<string, DecisionAncestryEmbedding>> {
+  const normalized = [...new Set(decisionIds.map((value) => value.trim()).filter((value) => value.length > 0))];
+  if (normalized.length === 0) {
+    return {};
+  }
+
+  const result = await query<DecisionAncestryEmbeddingRow>(
+    `
+      SELECT
+        decision_id,
+        source_hash,
+        embedding_provider,
+        embedding_model,
+        embedding_dimensions,
+        embedding_json,
+        updated_at
+      FROM decision_ancestry_embeddings
+      WHERE decision_id = ANY($1::text[])
+    `,
+    [normalized],
+  );
+
+  const byDecisionId: Record<string, DecisionAncestryEmbedding> = {};
+  for (const row of result.rows) {
+    byDecisionId[row.decision_id] = {
+      decisionId: row.decision_id,
+      sourceHash: asString(row.source_hash, ""),
+      embeddingProvider: asString(row.embedding_provider, ""),
+      embeddingModel: asString(row.embedding_model, ""),
+      embeddingDimensions: Math.max(1, Math.round(toNumber(row.embedding_dimensions) ?? 0)),
+      embedding: toNumberArray(row.embedding_json),
+      updatedAt: toIsoTimestamp(row.updated_at),
+    };
+  }
+
+  return byDecisionId;
+}
+
+export async function upsertDecisionAncestryEmbedding(input: {
+  decisionId: string;
+  sourceText: string;
+  sourceHash: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  embedding: number[];
+}): Promise<void> {
+  const decisionId = input.decisionId.trim();
+  if (decisionId.length === 0) {
+    throw new Error("decisionId is required");
+  }
+
+  const sourceHash = input.sourceHash.trim();
+  if (sourceHash.length === 0) {
+    throw new Error("sourceHash is required");
+  }
+
+  const embedding = input.embedding.filter((entry) => Number.isFinite(entry));
+  if (embedding.length === 0) {
+    throw new Error("embedding vector is required");
+  }
+
+  const dimensions = Math.max(1, Math.round(input.embeddingDimensions || embedding.length));
+
+  await query(
+    `
+      INSERT INTO decision_ancestry_embeddings (
+        decision_id,
+        source_hash,
+        source_text,
+        embedding_provider,
+        embedding_model,
+        embedding_dimensions,
+        embedding_json,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW())
+      ON CONFLICT (decision_id)
+      DO UPDATE SET
+        source_hash = EXCLUDED.source_hash,
+        source_text = EXCLUDED.source_text,
+        embedding_provider = EXCLUDED.embedding_provider,
+        embedding_model = EXCLUDED.embedding_model,
+        embedding_dimensions = EXCLUDED.embedding_dimensions,
+        embedding_json = EXCLUDED.embedding_json,
+        updated_at = NOW()
+    `,
+    [
+      decisionId,
+      sourceHash,
+      input.sourceText,
+      input.embeddingProvider.trim() || "unknown",
+      input.embeddingModel.trim() || "unknown",
+      dimensions,
+      JSON.stringify(embedding),
+    ],
+  );
 }
 
 interface DecisionWorkflowRow extends QueryResultRow {
@@ -991,6 +1318,7 @@ export async function upsertDecisionReview(decisionId: string, agentName: string
         blocked,
         blockers,
         risks,
+        citations,
         required_changes,
         approval_conditions,
         apga_impact_view,
@@ -1009,8 +1337,9 @@ export async function upsertDecisionReview(decisionId: string, agentName: string
         $8::jsonb,
         $9::jsonb,
         $10::jsonb,
-        $11,
-        $12::jsonb,
+        $11::jsonb,
+        $12,
+        $13::jsonb,
         NOW(),
         NOW()
       )
@@ -1022,6 +1351,7 @@ export async function upsertDecisionReview(decisionId: string, agentName: string
         blocked = EXCLUDED.blocked,
         blockers = EXCLUDED.blockers,
         risks = EXCLUDED.risks,
+        citations = EXCLUDED.citations,
         required_changes = EXCLUDED.required_changes,
         approval_conditions = EXCLUDED.approval_conditions,
         apga_impact_view = EXCLUDED.apga_impact_view,
@@ -1037,6 +1367,7 @@ export async function upsertDecisionReview(decisionId: string, agentName: string
       review.blocked,
       JSON.stringify(review.blockers),
       JSON.stringify(review.risks),
+      JSON.stringify(review.citations),
       JSON.stringify(review.required_changes),
       JSON.stringify(review.approval_conditions),
       review.apga_impact_view,
@@ -1215,6 +1546,7 @@ interface DecisionReviewRow extends QueryResultRow {
   blocked: boolean;
   blockers: unknown;
   risks: unknown;
+  citations: unknown;
   required_changes: unknown;
   approval_conditions: unknown;
   apga_impact_view: string;
@@ -1255,6 +1587,7 @@ export async function loadPersistedDecisionOutputs(decisionId: string): Promise<
           dr.blocked,
           dr.blockers,
           dr.risks,
+          dr.citations,
           dr.required_changes,
           dr.approval_conditions,
           dr.apga_impact_view,
@@ -1306,6 +1639,7 @@ export async function loadPersistedDecisionOutputs(decisionId: string): Promise<
       blocked: Boolean(row.blocked),
       blockers: toStringArray(row.blockers),
       risks: Array.isArray(row.risks) ? (row.risks as ReviewOutput["risks"]) : [],
+      citations: toCitationsArray(row.citations),
       required_changes: toStringArray(row.required_changes),
       approval_conditions: toStringArray(row.approval_conditions),
       apga_impact_view: row.apga_impact_view ?? "",

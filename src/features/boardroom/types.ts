@@ -94,6 +94,15 @@ export interface CreateStrategyDraft {
   sections: Record<string, string>;
 }
 
+export interface SocraticArtifactQuestion {
+  id: string;
+  prompt: string;
+  sectionKey: string;
+  answerLabel: string;
+  placeholder: string;
+  helperText: string;
+}
+
 export interface SectionMatrix {
   headers: string[];
   rows: string[][];
@@ -146,6 +155,12 @@ export interface ReportReviewRisk {
   evidence: string;
 }
 
+export interface ReportReviewCitation {
+  url: string;
+  title: string;
+  claim: string;
+}
+
 export interface ReportReview {
   agent: string;
   thesis: string;
@@ -154,6 +169,7 @@ export interface ReportReview {
   blocked: boolean;
   blockers: string[];
   risks: ReportReviewRisk[];
+  citations: ReportReviewCitation[];
   required_changes: string[];
   approval_conditions: string[];
   governance_checks_met: Record<string, boolean>;
@@ -192,6 +208,29 @@ export interface ReportInteractionRound {
   deltas: ReportInteractionDelta[];
 }
 
+export interface ReportDecisionAncestryOutcome {
+  gate_decision: string | null;
+  final_recommendation: "Approved" | "Challenged" | "Blocked" | null;
+  dqs: number | null;
+  run_at: string;
+}
+
+export interface ReportDecisionAncestryMatch {
+  decision_id: string;
+  decision_name: string;
+  similarity: number;
+  outcome: ReportDecisionAncestryOutcome;
+  lessons: string[];
+  summary: string;
+}
+
+export interface ReportHygieneFinding {
+  check: string;
+  status: "pass" | "warning" | "fail";
+  detail: string;
+  score_impact: number;
+}
+
 export interface ReportDecisionSnapshot {
   properties: Record<string, unknown>;
   excerpt: string;
@@ -203,11 +242,20 @@ export interface ReportWorkflowState {
   decision_id: string;
   decision_name: string;
   dqs: number;
+  hygiene_score: number;
+  substance_score: number;
+  confidence_score: number;
+  dissent_penalty: number;
+  confidence_penalty: number;
   status: string;
   run_id?: number;
   run_created_at?: string;
   missing_sections: string[];
+  decision_ancestry_retrieval_method?: "vector-db" | "lexical-fallback";
   interaction_rounds?: ReportInteractionRound[];
+  decision_ancestry: ReportDecisionAncestryMatch[];
+  hygiene_findings: ReportHygieneFinding[];
+  artifact_assistant_questions: string[];
   reviews: Record<string, ReportReview>;
   synthesis: ReportSynthesis | null;
   prd: ReportPrd | null;

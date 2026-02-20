@@ -18,6 +18,7 @@ Request body:
 - `temperature?: number` (`0..1`)
 - `maxTokens?: number` (`256..8000`)
 - `interactionRounds?: number` (`0..3`)
+- `includeRedTeamPersonas?: boolean` (default `false`, adds pre-mortem + resource-competition reviewers)
 - `agentConfigs?: AgentConfig[]`
 - `includeExternalResearch?: boolean` (default `false`)
 - `includeSensitive?: boolean` (default `false`, returns redacted preview when false)

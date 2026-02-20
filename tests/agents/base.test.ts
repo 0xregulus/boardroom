@@ -50,6 +50,7 @@ describe("ConfiguredReviewAgent", () => {
         blocked: "no",
         blockers: ["  ", "Need stress test"],
         risks: [{ category: "execution", severity: 12, description: "Capacity risk" }],
+        citations: [{ url: "https://example.com/report", title: "Execution report", claim: "Capacity risk context" }],
         required_revisions: "Add rollback plan;Add SLO",
         conditions: ["Stage rollout"],
         apgaImpactView: "Positive",
@@ -91,6 +92,7 @@ describe("ConfiguredReviewAgent", () => {
         blocked: false,
         blockers: [],
         risks: [],
+        citations: [],
         required_changes: [],
         approval_conditions: [],
         apga_impact_view: "Positive",
@@ -122,7 +124,7 @@ describe("ConfiguredReviewAgent", () => {
       "Evaluate the following governance checks (set true if met, false otherwise): Kill Criteria Defined, Problem Quantified",
     );
     expect(request?.userMessage).toContain(
-      "Return strict JSON with thesis, score, blockers, risks, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
+      "Return strict JSON with thesis, score, blockers, risks, citations, required_changes, approval_conditions, governance_checks_met, and apga_impact_view.",
     );
   });
 
@@ -152,6 +154,7 @@ describe("ConfiguredComplianceAgent", () => {
         blocked: false,
         blockers: [],
         risks: [],
+        citations: [],
         required_changes: ["Document retention policy"],
         approval_conditions: [],
         apga_impact_view: "Neutral",

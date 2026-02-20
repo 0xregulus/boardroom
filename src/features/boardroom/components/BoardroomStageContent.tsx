@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import type { ActiveTab, AppStage, WorkspaceView } from "../types";
 import { AgentConfigModal } from "./AgentConfigModal";
 import { CreateStrategyStage } from "./CreateStrategyStage";
+import { DecisionAncestryPanel } from "./DecisionAncestryPanel";
 import { StrategyDetails } from "./StrategyDetails";
 import { StrategyList } from "./StrategyList";
 import { WorkflowEditorStage } from "./WorkflowEditorStage";
@@ -14,6 +15,7 @@ interface BoardroomStageContentProps {
   activeTab: ActiveTab;
   strategyListProps: ComponentProps<typeof StrategyList>;
   strategyDetailsProps: ComponentProps<typeof StrategyDetails>;
+  decisionAncestryPanelProps: ComponentProps<typeof DecisionAncestryPanel>;
   createStrategyStageProps: ComponentProps<typeof CreateStrategyStage>;
   agentConfigModalProps: ComponentProps<typeof AgentConfigModal>;
   workflowEditorStageProps: ComponentProps<typeof WorkflowEditorStage>;
@@ -26,6 +28,7 @@ export function BoardroomStageContent({
   activeTab,
   strategyListProps,
   strategyDetailsProps,
+  decisionAncestryPanelProps,
   createStrategyStageProps,
   agentConfigModalProps,
   workflowEditorStageProps,
@@ -41,6 +44,10 @@ export function BoardroomStageContent({
         <div className="strategy-preview">
           <StrategyDetails {...strategyDetailsProps} />
         </div>
+
+        <aside className="strategy-ancestry">
+          <DecisionAncestryPanel {...decisionAncestryPanelProps} />
+        </aside>
       </section>
     );
   }
@@ -54,7 +61,13 @@ export function BoardroomStageContent({
   }
 
   if (activeTab === "editor") {
-    return <WorkflowEditorStage {...workflowEditorStageProps} />;
+    return (
+      <section className="pipeline-settings-stage full-page">
+        <div className="pipeline-settings-main full-page">
+          <WorkflowEditorStage {...workflowEditorStageProps} />
+        </div>
+      </section>
+    );
   }
 
   return <WorkflowPreviewStage {...workflowPreviewStageProps} />;

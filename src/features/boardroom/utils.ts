@@ -19,15 +19,20 @@ import type {
   MatrixSectionKey,
   NodePosition,
   ReportDecisionSnapshot,
+  ReportDecisionAncestryMatch,
+  ReportDecisionAncestryOutcome,
+  ReportHygieneFinding,
   ReportInteractionDelta,
   ReportInteractionRound,
   ReportPrd,
   ReportReview,
+  ReportReviewCitation,
   ReportReviewRisk,
   ReportSynthesis,
   ReportWorkflowState,
   SectionMatrix,
   SnapshotMetrics,
+  SocraticArtifactQuestion,
   StrategyStatus,
   WorkflowNode,
   WorkflowTask,
@@ -137,6 +142,105 @@ export function initialCreateStrategyDraft(): CreateStrategyDraft {
     },
     sections: sectionDefaults,
   };
+}
+
+export function buildSocraticArtifactQuestions(draft: CreateStrategyDraft): SocraticArtifactQuestion[] {
+  const decisionLabel = draft.name.trim().length > 0 ? draft.name.trim() : "this strategy";
+  const investmentLabel =
+    draft.capitalAllocation.investmentRequired > 0
+      ? CURRENCY_FORMATTER.format(draft.capitalAllocation.investmentRequired)
+      : "the proposed investment";
+  const primaryKpi =
+    draft.coreProperties.primaryKpi.trim().length > 0
+      ? draft.coreProperties.primaryKpi.trim()
+      : draft.primaryKpi.trim().length > 0
+        ? draft.primaryKpi.trim()
+        : "the primary KPI";
+
+  return [
+    {
+      id: "privacy-hygiene-guardrail",
+      prompt: `You mentioned ${decisionLabel}. What is the specific hygiene guardrail for user data privacy here?`,
+      sectionKey: "complianceMonitoring",
+      answerLabel: "Hygiene guardrail (privacy)",
+      placeholder: "Example: PII minimization + 30-day retention + DSR response SLA <= 7 days.",
+      helperText: "Appends your answer to the Compliance & Monitoring section.",
+    },
+    {
+      id: "blocked-threshold",
+      prompt: `If we invest ${investmentLabel}, what is the blocked threshold for failure?`,
+      sectionKey: "killCriteria",
+      answerLabel: "Blocked threshold",
+      placeholder: "Example: Block if CAC exceeds $120 for 2 consecutive weeks.",
+      helperText: "Appends your answer to the Kill Criteria section.",
+    },
+    {
+      id: "early-warning-signal",
+      prompt: `What leading indicator should trigger intervention before ${primaryKpi} misses target?`,
+      sectionKey: "downsideModel",
+      answerLabel: "Early warning signal",
+      placeholder: "Example: Week-2 activation drops below 35% in two cohorts.",
+      helperText: "Appends your answer to the Downside Model section.",
+    },
+    {
+      id: "premortem-failure-path",
+      prompt: "Assume this initiative failed 12 months from now. What is the most likely failure chain?",
+      sectionKey: "downsideModel",
+      answerLabel: "Pre-mortem failure chain",
+      placeholder: "Example: Rising CAC + delayed onboarding automation + churn spike in SMB segment.",
+      helperText: "Appends your answer to the Downside Model section.",
+    },
+    {
+      id: "resource-competition",
+      prompt: "If capital is constrained, why should this decision win against the next best alternative?",
+      sectionKey: "finalDecision",
+      answerLabel: "Capital allocation defense",
+      placeholder: "Example: This initiative returns 2.1x risk-adjusted value vs 1.3x alternative.",
+      helperText: "Appends your answer to the Final Decision section.",
+    },
+    {
+      id: "resource-competitor-counter",
+      prompt: "What is the strongest argument for funding the competing initiative instead, and how do you rebut it?",
+      sectionKey: "finalDecision",
+      answerLabel: "Resource competitor rebuttal",
+      placeholder: "Example: Competing project has faster payback, but this one compounds retention leverage in core segment.",
+      helperText: "Appends your answer to the Final Decision section.",
+    },
+  ];
+}
+
+export function appendSocraticAnswerToSection(sectionValue: string, answerLabel: string, answer: string): string {
+  const normalizedAnswer = answer.trim().replace(/\s+/g, " ");
+  if (normalizedAnswer.length === 0) {
+    return sectionValue;
+  }
+
+  const nextLine = `- ${answerLabel}: ${normalizedAnswer}`;
+  const existingLines = sectionValue
+    .split("\n")
+    .map((line) => line.trim().toLowerCase());
+  if (existingLines.includes(nextLine.toLowerCase())) {
+    return sectionValue;
+  }
+
+  const trimmed = sectionValue.trimEnd();
+  if (trimmed.length === 0) {
+    return nextLine;
+  }
+
+  return `${trimmed}\n${nextLine}`;
+}
+
+export function sectionHasSocraticAnswer(sectionValue: string, answerLabel: string): boolean {
+  const normalizedLabel = answerLabel.trim().toLowerCase();
+  if (normalizedLabel.length === 0) {
+    return false;
+  }
+
+  return sectionValue
+    .split("\n")
+    .map((line) => line.trim().toLowerCase())
+    .some((line) => line.startsWith(`- ${normalizedLabel}:`) && line.length > `- ${normalizedLabel}:`.length);
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
@@ -554,6 +658,28 @@ function parseReview(value: unknown): ReportReview | null {
       .filter((risk): risk is ReportReviewRisk => risk !== null)
     : [];
 
+  const citations = Array.isArray(record.citations)
+    ? record.citations
+      .map((entry) => {
+        const citationRecord = asRecord(entry);
+        if (!citationRecord) {
+          return null;
+        }
+
+        const url = asString(citationRecord.url);
+        if (url.trim().length === 0) {
+          return null;
+        }
+
+        return {
+          url,
+          title: asString(citationRecord.title),
+          claim: asString(citationRecord.claim),
+        } satisfies ReportReviewCitation;
+      })
+      .filter((citation): citation is ReportReviewCitation => citation !== null)
+    : [];
+
   return {
     agent: asString(record.agent, "Agent"),
     thesis: asString(record.thesis),
@@ -562,6 +688,7 @@ function parseReview(value: unknown): ReportReview | null {
     blocked: asBoolean(record.blocked, false),
     blockers: asStringArray(record.blockers),
     risks,
+    citations,
     required_changes: asStringArray(record.required_changes),
     approval_conditions: asStringArray(record.approval_conditions),
     governance_checks_met: asBooleanMap(record.governance_checks_met),
@@ -674,6 +801,86 @@ function parseInteractionRounds(value: unknown): ReportInteractionRound[] {
     .filter((entry): entry is ReportInteractionRound => entry !== null);
 }
 
+function parseAncestryOutcome(value: unknown): ReportDecisionAncestryOutcome {
+  const record = asRecord(value);
+  const recommendation = asString(record?.final_recommendation);
+  const finalRecommendation: "Approved" | "Challenged" | "Blocked" | null =
+    recommendation === "Approved" || recommendation === "Challenged" || recommendation === "Blocked"
+      ? recommendation
+      : null;
+
+  return {
+    gate_decision: record ? asString(record.gate_decision) || null : null,
+    final_recommendation: finalRecommendation,
+    dqs: record ? (Number.isFinite(asNumber(record.dqs, Number.NaN)) ? asNumber(record.dqs, 0) : null) : null,
+    run_at: record ? asString(record.run_at) : "",
+  };
+}
+
+function parseDecisionAncestry(value: unknown): ReportDecisionAncestryMatch[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+
+      const decisionId = asString(record.decision_id);
+      if (decisionId.trim().length === 0) {
+        return null;
+      }
+
+      return {
+        decision_id: decisionId,
+        decision_name: asString(record.decision_name, decisionId),
+        similarity: asNumber(record.similarity, 0),
+        outcome: parseAncestryOutcome(record.outcome),
+        lessons: asStringArray(record.lessons),
+        summary: asString(record.summary),
+      } satisfies ReportDecisionAncestryMatch;
+    })
+    .filter((entry): entry is ReportDecisionAncestryMatch => entry !== null);
+}
+
+function normalizeHygieneStatus(value: unknown): "pass" | "warning" | "fail" {
+  const status = asString(value).trim().toLowerCase();
+  if (status === "pass" || status === "warning" || status === "fail") {
+    return status;
+  }
+  return "warning";
+}
+
+function parseHygieneFindings(value: unknown): ReportHygieneFinding[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+
+      const check = asString(record.check);
+      if (check.trim().length === 0) {
+        return null;
+      }
+
+      return {
+        check,
+        status: normalizeHygieneStatus(record.status),
+        detail: asString(record.detail),
+        score_impact: asNumber(record.score_impact, 0),
+      } satisfies ReportHygieneFinding;
+    })
+    .filter((entry): entry is ReportHygieneFinding => entry !== null);
+}
+
 function parseWorkflowState(value: unknown): ReportWorkflowState | null {
   const record = asRecord(value);
   if (!record) {
@@ -702,11 +909,25 @@ function parseWorkflowState(value: unknown): ReportWorkflowState | null {
     decision_id: asString(record.decision_id),
     decision_name: asString(record.decision_name, "Untitled Decision"),
     dqs: asNumber(record.dqs, 0),
+    hygiene_score: asNumber(record.hygiene_score, 0),
+    substance_score: asNumber(record.substance_score, 0),
+    confidence_score: asNumber(record.confidence_score, 0),
+    dissent_penalty: asNumber(record.dissent_penalty, 0),
+    confidence_penalty: asNumber(record.confidence_penalty, 0),
     status: asString(record.status, "PROPOSED"),
     run_id: runId,
     run_created_at: runCreatedAt.length > 0 ? runCreatedAt : undefined,
     missing_sections: asStringArray(record.missing_sections),
+    decision_ancestry_retrieval_method:
+      asString(record.decision_ancestry_retrieval_method).trim() === "vector-db"
+        ? "vector-db"
+        : asString(record.decision_ancestry_retrieval_method).trim() === "lexical-fallback"
+          ? "lexical-fallback"
+          : undefined,
     interaction_rounds: parseInteractionRounds(record.interaction_rounds),
+    decision_ancestry: parseDecisionAncestry(record.decision_ancestry),
+    hygiene_findings: parseHygieneFindings(record.hygiene_findings),
+    artifact_assistant_questions: asStringArray(record.artifact_assistant_questions),
     reviews: parsedReviews,
     synthesis: parseSynthesis(record.synthesis),
     prd: parsePrd(record.prd),
@@ -797,7 +1018,7 @@ export function buildReviewTasks(reviewRoles: string[]): WorkflowTask[] {
 }
 
 export function buildInteractionTasks(interactionRounds: number): WorkflowTask[] {
-  const normalized = Math.max(0, Math.min(3, Math.round(interactionRounds)));
+  const normalized = Math.max(0, Math.min(10, Math.round(interactionRounds)));
   const tasks: WorkflowTask[] = [];
 
   for (let round = 1; round <= normalized; round += 1) {
@@ -814,7 +1035,7 @@ export function buildInteractionTasks(interactionRounds: number): WorkflowTask[]
 export function buildInitialNodes(
   strategyName?: string | null,
   reviewRoles: string[] = REVIEW_ORDER,
-  interactionRounds = 1,
+  interactionRounds = 5,
 ): WorkflowNode[] {
   const inputSubtitle = strategyName ? strategyName : "No Strategy Selected";
   const interactionTasks = buildInteractionTasks(interactionRounds);
@@ -827,7 +1048,7 @@ export function buildInitialNodes(
     {
       id: "1",
       type: "INPUT",
-      title: "Strategy Context",
+      title: "Strategic Context",
       subtitle: inputSubtitle,
       position: { x: 40, y: 96 },
       status: "IDLE",
@@ -843,7 +1064,7 @@ export function buildInitialNodes(
     {
       id: "3",
       type: "REVIEW",
-      title: "Executive Review",
+      title: "Parallel Reviewers",
       subtitle: "CEO, CFO, CTO, Compliance",
       position: { x: 560, y: 96 },
       status: "IDLE",

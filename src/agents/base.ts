@@ -4,7 +4,10 @@ import { fetchTavilyResearch, formatTavilyResearch } from "../research/tavily";
 import { sanitizeForExternalUse } from "../security/redaction";
 import { ChairpersonSynthesis } from "../workflow/states";
 import {
+  buildDecisionAncestryRuntimeInstruction,
+  buildHygieneRuntimeInstruction,
   buildInteractionRuntimeInstruction,
+  buildMarketIntelligenceRuntimeInstruction,
   buildReviewJsonContractInstruction,
   buildReviewRuntimeContextInstruction,
   loadPrompts,
@@ -44,6 +47,7 @@ function invalidReviewFallback(agentName: string, reason: string): ReviewOutput 
         evidence: "LLM response did not match required ReviewOutput schema.",
       },
     ],
+    citations: [],
     required_changes: ["Regenerate review with strict JSON schema compliance."],
     approval_conditions: [],
     apga_impact_view: "Unknown due to invalid review output.",
@@ -109,6 +113,7 @@ export abstract class BaseAgent {
           evidence: reason,
         },
       ],
+      citations: [],
       required_changes: ["Regenerate review with strict valid JSON output."],
       approval_conditions: [],
       apga_impact_view: "Unknown due to invalid model output.",
@@ -169,8 +174,15 @@ export abstract class BaseReviewAgent extends BaseAgent {
       governanceFieldsStr,
     );
     const interactionRuntimeInstruction = buildInteractionRuntimeInstruction(context.memory_context);
+    const ancestryRuntimeInstruction = buildDecisionAncestryRuntimeInstruction(context.memory_context);
+    const marketIntelligenceRuntimeInstruction = buildMarketIntelligenceRuntimeInstruction(context.memory_context);
+    const hygieneRuntimeInstruction = buildHygieneRuntimeInstruction(context.memory_context);
     const userMessage = `${withResearchContext(baseUserMessage, researchBlock)}\n\n${runtimeContextInstruction}${
       interactionRuntimeInstruction ? `\n\n${interactionRuntimeInstruction}` : ""
+    }${ancestryRuntimeInstruction ? `\n\n${ancestryRuntimeInstruction}` : ""}${
+      marketIntelligenceRuntimeInstruction ? `\n\n${marketIntelligenceRuntimeInstruction}` : ""
+    }${
+      hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : ""
     }\n\n${buildReviewJsonContractInstruction(this.name, governanceFields)}`;
 
     try {
@@ -259,12 +271,18 @@ export class ConfiguredComplianceAgent extends BaseAgent {
       researchBlock,
     );
     const interactionRuntimeInstruction = buildInteractionRuntimeInstruction(context.memory_context);
+    const ancestryRuntimeInstruction = buildDecisionAncestryRuntimeInstruction(context.memory_context);
+    const marketIntelligenceRuntimeInstruction = buildMarketIntelligenceRuntimeInstruction(context.memory_context);
+    const hygieneRuntimeInstruction = buildHygieneRuntimeInstruction(context.memory_context);
 
     userMessage +=
       `\n\n${buildReviewRuntimeContextInstruction(snapshotJson, missingSectionsStr, governanceFieldsStr)}` +
       (interactionRuntimeInstruction ? `\n\n${interactionRuntimeInstruction}` : "") +
+      (ancestryRuntimeInstruction ? `\n\n${ancestryRuntimeInstruction}` : "") +
+      (marketIntelligenceRuntimeInstruction ? `\n\n${marketIntelligenceRuntimeInstruction}` : "") +
+      (hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : "") +
       `\n\n${buildReviewJsonContractInstruction(this.name, governanceFields)}` +
-      "\nReturn concise JSON: thesis <= 60 words, max 3 blockers, max 3 risks, max 3 required_changes, short evidence strings.";
+      "\nReturn concise JSON: thesis <= 60 words, max 3 blockers, max 3 risks, max 6 citations, max 3 required_changes, short evidence strings.";
 
     const maxTokenPlan = [this.maxTokens, this.maxTokens * 2];
 
@@ -314,12 +332,49 @@ export class ConfiguredChairpersonAgent extends BaseAgent {
   async evaluate(context: AgentContext): Promise<ChairpersonSynthesis> {
     const prompts = await this.getPrompts();
     const reviews = Array.isArray(context.snapshot.reviews) ? context.snapshot.reviews : [];
+    const decisionAncestry = Array.isArray(context.memory_context.decision_ancestry)
+      ? context.memory_context.decision_ancestry
+      : [];
+    const hygieneFindings = Array.isArray(context.memory_context.hygiene_findings)
+      ? context.memory_context.hygiene_findings
+      : [];
+    const hygieneScore = typeof context.memory_context.hygiene_score === "number" ? context.memory_context.hygiene_score : null;
+    const confidenceScore =
+      typeof context.memory_context.confidence_score === "number" ? context.memory_context.confidence_score : null;
+    const reviewEvidenceLines = Array.isArray(context.memory_context.review_evidence_lines)
+      ? context.memory_context.review_evidence_lines
+      : [];
+    const weightedConflictSignal =
+      context.memory_context.weighted_conflict_signal &&
+      typeof context.memory_context.weighted_conflict_signal === "object" &&
+      !Array.isArray(context.memory_context.weighted_conflict_signal)
+        ? context.memory_context.weighted_conflict_signal
+        : {};
+    const evidenceVerification =
+      context.memory_context.evidence_verification &&
+      typeof context.memory_context.evidence_verification === "object" &&
+      !Array.isArray(context.memory_context.evidence_verification)
+        ? context.memory_context.evidence_verification
+        : null;
 
-    const userMessage = this.renderUserTemplate(prompts.userTemplate, {
+    const baseMessage = this.renderUserTemplate(prompts.userTemplate, {
       reviews_json: JSON.stringify(reviews, null, 2),
       agent_name: this.displayName,
       provider: this.provider,
     });
+    const userMessage = [
+      baseMessage,
+      "",
+      `Decision ancestry context: ${JSON.stringify(decisionAncestry)}`,
+      `Automated hygiene score: ${hygieneScore !== null ? hygieneScore.toFixed(2) : "N/A"}`,
+      `Automated hygiene findings: ${JSON.stringify(hygieneFindings)}`,
+      `Specialized confidence score: ${confidenceScore !== null ? confidenceScore.toFixed(2) : "N/A"}`,
+      `Weighted conflict signal: ${JSON.stringify(weightedConflictSignal)}`,
+      evidenceVerification ? `Evidence verification summary: ${JSON.stringify(evidenceVerification)}` : "",
+      reviewEvidenceLines.length > 0 ? `Executive evidence lines: ${JSON.stringify(reviewEvidenceLines)}` : "",
+      "Weighted conflict policy: dissent from Compliance/CFO carries more weight than growth-only optimism.",
+      "Evidence policy: include an 'Evidence citations:' section and cite concrete reviewer lines.",
+    ].join("\n");
 
     const fallback: ChairpersonSynthesis = {
       executive_summary: "Chair synthesis failed; manual review required.",

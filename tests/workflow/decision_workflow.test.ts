@@ -4,12 +4,13 @@ import type { AgentConfig } from "../../src/config/agent_config";
 function makeReviewOutput(agent: string) {
   return {
     agent,
-    thesis: `${agent} review`,
+    thesis: `${agent} review indicates balanced evidence and clear rationale for decision quality.`,
     score: 8,
     confidence: 0.8,
     blocked: false,
     blockers: [],
     risks: [],
+    citations: [],
     required_changes: [],
     approval_conditions: [],
     apga_impact_view: "Positive",
@@ -53,10 +54,14 @@ const workflowMockState = vi.hoisted(() => ({
 }));
 
 const storeMocks = vi.hoisted(() => ({
+  getDecisionAncestryEmbedding: vi.fn(),
   getDecisionForWorkflow: vi.fn(),
+  listDecisionAncestryCandidates: vi.fn(),
+  listDecisionAncestryEmbeddings: vi.fn(),
   listProposedDecisionIds: vi.fn(),
   recordWorkflowRun: vi.fn(),
   updateDecisionStatus: vi.fn(),
+  upsertDecisionAncestryEmbedding: vi.fn(),
   upsertDecisionPrd: vi.fn(),
   upsertDecisionReview: vi.fn(),
   upsertDecisionSynthesis: vi.fn(),
@@ -121,10 +126,14 @@ const agentConfigMocks = vi.hoisted(() => {
 });
 
 vi.mock("../../src/store/postgres", () => ({
+  getDecisionAncestryEmbedding: storeMocks.getDecisionAncestryEmbedding,
   getDecisionForWorkflow: storeMocks.getDecisionForWorkflow,
+  listDecisionAncestryCandidates: storeMocks.listDecisionAncestryCandidates,
+  listDecisionAncestryEmbeddings: storeMocks.listDecisionAncestryEmbeddings,
   listProposedDecisionIds: storeMocks.listProposedDecisionIds,
   recordWorkflowRun: storeMocks.recordWorkflowRun,
   updateDecisionStatus: storeMocks.updateDecisionStatus,
+  upsertDecisionAncestryEmbedding: storeMocks.upsertDecisionAncestryEmbedding,
   upsertDecisionPrd: storeMocks.upsertDecisionPrd,
   upsertDecisionReview: storeMocks.upsertDecisionReview,
   upsertDecisionSynthesis: storeMocks.upsertDecisionSynthesis,
@@ -249,8 +258,12 @@ beforeEach(() => {
   agentConfigMocks.buildDefaultAgentConfigs.mockImplementation(cloneDefaults);
 
   storeMocks.getDecisionForWorkflow.mockResolvedValue(makeDecision("d1"));
+  storeMocks.getDecisionAncestryEmbedding.mockResolvedValue(null);
+  storeMocks.listDecisionAncestryCandidates.mockResolvedValue([]);
+  storeMocks.listDecisionAncestryEmbeddings.mockResolvedValue({});
   storeMocks.listProposedDecisionIds.mockResolvedValue(["d1", "d2"]);
   storeMocks.updateDecisionStatus.mockResolvedValue(undefined);
+  storeMocks.upsertDecisionAncestryEmbedding.mockResolvedValue(undefined);
   storeMocks.upsertGovernanceChecks.mockResolvedValue(undefined);
   storeMocks.upsertDecisionReview.mockResolvedValue(undefined);
   storeMocks.upsertDecisionSynthesis.mockResolvedValue(undefined);
@@ -365,10 +378,10 @@ describe("runDecisionWorkflow", () => {
   it("clamps interaction rounds to upper bound", async () => {
     const state = await runDecisionWorkflow({ decisionId: "d1", interactionRounds: 99 });
 
-    expect(state.interaction_rounds).toHaveLength(3);
+    expect(state.interaction_rounds).toHaveLength(10);
     const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
     const interactionContexts = interactionRoundContexts(allContexts);
-    expect(interactionContexts).toHaveLength(12);
+    expect(interactionContexts).toHaveLength(40);
   });
 
   it("disables external research by default", async () => {
@@ -454,6 +467,34 @@ describe("runDecisionWorkflow", () => {
     );
     expect(workflowMockState.complianceAgentRuntimeParams.every((entry) => entry.temperature === 0)).toBe(true);
     expect(workflowMockState.complianceAgentRuntimeParams.every((entry) => entry.maxTokens === 8000)).toBe(true);
+  });
+
+  it("challenges decision when specialized confidence is low", async () => {
+    workflowMockState.reviewOutputs.CFO.confidence = 0.25;
+    workflowMockState.reviewOutputs.CTO.confidence = 0.3;
+    workflowMockState.reviewOutputs.compliance.confidence = 0.2;
+
+    const state = await runDecisionWorkflow({ decisionId: "d1" });
+
+    expect(state.prd).toBeNull();
+    expect(storeMocks.updateDecisionStatus).toHaveBeenCalledWith("d1", "Challenged");
+    expect(storeMocks.recordWorkflowRun).toHaveBeenCalledWith(
+      "d1",
+      expect.any(Number),
+      "revision_required",
+      "SYNTHESIZED",
+      expect.any(Object),
+    );
+  });
+
+  it("adds red-team personas when requested", async () => {
+    const state = await runDecisionWorkflow({ decisionId: "d1", includeRedTeamPersonas: true });
+
+    expect(state.interaction_rounds).toHaveLength(1);
+    const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
+    const interactionContexts = interactionRoundContexts(allContexts);
+    expect(interactionContexts).toHaveLength(6);
+    expect(storeMocks.upsertDecisionReview).toHaveBeenCalledTimes(7);
   });
 });
 

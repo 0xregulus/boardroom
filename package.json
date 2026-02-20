@@ -6,6 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "local:start": "bash scripts/local_start.sh",
+    "local:start:demo": "bash scripts/local_start.sh --demo",
+    "local:start:fresh": "bash scripts/local_start.sh --fresh",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,7 +19,8 @@
     "prepare": "git config core.hooksPath .githooks",
     "security:audit": "node --import tsx src/security/cli.ts audit",
     "security:doctor": "node --import tsx src/security/cli.ts doctor",
-    "db:seed": "tsx scripts/seed_postgres.ts"
+    "db:seed": "tsx scripts/seed_postgres.ts",
+    "db:reset": "tsx scripts/seed_postgres.ts --reset --truncate-only"
   },
   "dependencies": {
     "dotenv": "^17.3.1",

@@ -11,6 +11,7 @@ erDiagram
     DECISIONS ||--o{ DECISION_SYNTHESIS : "Has Summary"
     DECISIONS ||--o| DECISION_PRDS : "Generates PRD"
     DECISIONS ||--o{ WORKFLOW_RUNS : "Has History"
+    DECISIONS ||--o| DECISION_ANCESTRY_EMBEDDINGS : "Has Vector Memory"
 
     DECISIONS {
         uuid id PK
@@ -36,6 +37,14 @@ erDiagram
         text provider
         text model
         jsonb config
+    }
+    DECISION_ANCESTRY_EMBEDDINGS {
+        text decision_id FK
+        text source_hash
+        text embedding_provider
+        text embedding_model
+        int embedding_dimensions
+        jsonb embedding_json
     }
 ```
 
@@ -63,3 +72,5 @@ erDiagram
   - Persisted runtime agent configurations used by review workflow.
 - `rate_limits`
   - Rate-limiter buckets for API protection when PostgreSQL backend is enabled.
+- `decision_ancestry_embeddings`
+  - Persisted vector memory rows for decision ancestry retrieval (`decision_id`, source hash/text, embedding metadata/vector JSON).

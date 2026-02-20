@@ -74,7 +74,7 @@ export function StrategyDetails({
                     onClick={onOpenDetails}
                     disabled={isLoadingStrategyDetails}
                 >
-                    {isLoadingStrategyDetails ? "Loading Details..." : "View Details"}
+                    {isLoadingStrategyDetails ? "Loading Details..." : "Details"}
                 </button>
 
                 {isSelectedStrategyRunHistoryLoading ? (
@@ -83,13 +83,13 @@ export function StrategyDetails({
                     </button>
                 ) : selectedStrategyRunHistoryCount > 0 ? (
                     <button type="button" className="strategy-action-button strategy-action-history" onClick={onViewHistory}>
-                        View Previous Runs ({selectedStrategyRunHistoryCount})
+                        Previous Runs ({selectedStrategyRunHistoryCount})
                     </button>
                 ) : null}
 
                 <button type="button" className="strategy-action-button strategy-run-button" onClick={onRunAnalysis}>
                     <span className="play-glyph" aria-hidden="true" />
-                    Run Analysis Pipeline
+                    Run Analysis
                 </button>
             </div>
 

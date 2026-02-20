@@ -8,35 +8,22 @@ import { buildDefaultAgentConfigs, normalizeAgentConfigs } from "../config/agent
 import { resolveModelForProvider, resolveProvider } from "../config/llm_providers";
 import { ProviderClientRegistry } from "../llm/client";
 import type { WorkflowState, RunWorkflowOptions } from "./states";
-
-export const DQS_THRESHOLD = 7.0;
-export const CORE_DQS_WEIGHTS: Record<string, number> = {
-  ceo: 0.3,
-  cfo: 0.25,
-  cto: 0.25,
-  compliance: 0.2,
-};
-export const EXTRA_AGENT_WEIGHT = 0.2;
-
-export const STATUS_APPROVED = "Approved";
-export const STATUS_BLOCKED = "Blocked";
-export const STATUS_CHALLENGED = "Challenged";
-export const STATUS_INCOMPLETE = "Incomplete";
-export const STATUS_UNDER_EVALUATION = "Under Evaluation";
+import {
+  DEFAULT_TEMPERATURE,
+  DEFAULT_MAX_TOKENS,
+  MIN_TEMPERATURE,
+  MAX_TEMPERATURE,
+  MIN_MAX_TOKENS,
+  MAX_MAX_TOKENS,
+  DEFAULT_MAX_BULK_RUN_DECISIONS,
+  MAX_BULK_RUN_DECISIONS,
+  DEFAULT_INTERACTION_ROUNDS,
+  MIN_INTERACTION_ROUNDS,
+  MAX_INTERACTION_ROUNDS,
+} from "./constants";
 
 export type GateDecision = "approved" | "revision_required" | "blocked";
 
-const DEFAULT_TEMPERATURE = 0.2;
-const DEFAULT_MAX_TOKENS = 1200;
-const MIN_TEMPERATURE = 0;
-const MAX_TEMPERATURE = 1;
-const MIN_MAX_TOKENS = 256;
-const MAX_MAX_TOKENS = 8000;
-const DEFAULT_MAX_BULK_RUN_DECISIONS = 50;
-const MAX_BULK_RUN_DECISIONS = 500;
-const DEFAULT_INTERACTION_ROUNDS = 1;
-const MIN_INTERACTION_ROUNDS = 0;
-const MAX_INTERACTION_ROUNDS = 3;
 
 export interface WorkflowDependencies {
   providerClients: ProviderClientRegistry;
@@ -46,6 +33,7 @@ export interface WorkflowDependencies {
   maxTokens: number;
   interactionRounds: number;
   includeExternalResearch: boolean;
+  includeRedTeamPersonas: boolean;
   agentConfigs: AgentConfig[];
   hasCustomAgentConfigs: boolean;
 }
@@ -86,6 +74,57 @@ function isSameAgentConfigSet(left: AgentConfig[], right: AgentConfig[]): boolea
 
 function executionModel(config: AgentConfig, candidate?: string): string {
   return resolveModelForProvider(config.provider, candidate ?? config.model);
+}
+
+function parseBooleanFlag(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+  }
+
+  return false;
+}
+
+function buildRedTeamPersonas(
+  provider: AgentConfig["provider"],
+  fallbackModel: string,
+  temperature: number,
+  maxTokens: number,
+): AgentConfig[] {
+  const resolvedModel = resolveModelForProvider(provider, fallbackModel);
+
+  return [
+    {
+      id: "pre-mortem",
+      role: "Pre-Mortem",
+      name: "Pre-Mortem Failure Agent",
+      provider,
+      model: resolvedModel,
+      temperature,
+      maxTokens,
+      systemMessage:
+        "You are a red-team pre-mortem analyst. Assume this project failed one year from now and explain why with concrete failure paths, triggers, and overlooked assumptions.",
+      userMessage:
+        "Run a pre-mortem review of the strategic decision. Work backward from failure in 12 months. Identify specific failure chains, leading indicators that would have predicted failure, and hard stop criteria. Return strict JSON schema.",
+    },
+    {
+      id: "resource-competitor",
+      role: "Resource Competitor",
+      name: "Resource Competition Agent",
+      provider,
+      model: resolvedModel,
+      temperature,
+      maxTokens,
+      systemMessage:
+        "You are a capital allocation challenger. Your job is to argue that this initiative should lose funding to alternative priorities unless the proposal demonstrates superior risk-adjusted return.",
+      userMessage:
+        "Challenge this strategy from a resource competition perspective. Explain why capital should be reallocated elsewhere unless this proposal clearly dominates alternatives on ROI, strategic leverage, and execution risk. Return strict JSON schema.",
+    },
+  ];
 }
 
 export function resolveRuntimeConfig(config: AgentConfig, deps: WorkflowDependencies): ResolvedAgentRuntimeConfig {
@@ -157,6 +196,18 @@ export function initialState(options: RunWorkflowOptions): WorkflowState {
     missing_sections: [],
     decision_name: `Decision ${options.decisionId}`,
     interaction_rounds: [],
+    decision_ancestry: [],
+    decision_ancestry_retrieval_method: "lexical-fallback",
+    hygiene_score: 0,
+    substance_score: 0,
+    confidence_score: 0,
+    dissent_penalty: 0,
+    confidence_penalty: 0,
+    hygiene_findings: [],
+    artifact_assistant_questions: [],
+    chairperson_evidence_citations: [],
+    market_intelligence: null,
+    evidence_verification: null,
   };
 }
 
@@ -199,11 +250,24 @@ export function buildDependencies(options?: Partial<RunWorkflowOptions>): Workfl
   const maxTokens = clampMaxTokens(options?.maxTokens);
   const interactionRounds = clampInteractionRounds(options?.interactionRounds);
   const includeExternalResearch = options?.includeExternalResearch ?? false;
-  const agentConfigs = normalizeAgentConfigs(options?.agentConfigs);
-  const defaultAgentConfigs = buildDefaultAgentConfigs();
-  const hasCustomAgentConfigs =
-    Array.isArray(options?.agentConfigs) && !isSameAgentConfigSet(agentConfigs, defaultAgentConfigs);
+  const includeRedTeamPersonas =
+    options?.includeRedTeamPersonas ?? parseBooleanFlag(process.env.BOARDROOM_INCLUDE_RED_TEAM_PERSONAS);
   const defaultProvider = resolveProvider(process.env.BOARDROOM_PROVIDER);
+  let agentConfigs = normalizeAgentConfigs(options?.agentConfigs);
+  const defaultAgentConfigs = buildDefaultAgentConfigs();
+  const hasCustomAgentConfigsBase =
+    Array.isArray(options?.agentConfigs) && !isSameAgentConfigSet(agentConfigs, defaultAgentConfigs);
+  if (includeRedTeamPersonas) {
+    const personas = buildRedTeamPersonas(defaultProvider, modelName, temperature, maxTokens);
+    const existing = new Set(agentConfigs.map((config) => config.id));
+    for (const persona of personas) {
+      if (!existing.has(persona.id)) {
+        agentConfigs = [...agentConfigs, persona];
+      }
+    }
+  }
+
+  const hasCustomAgentConfigs = hasCustomAgentConfigsBase || includeRedTeamPersonas;
   const providerClients = new ProviderClientRegistry();
 
   return {
@@ -214,6 +278,7 @@ export function buildDependencies(options?: Partial<RunWorkflowOptions>): Workfl
     maxTokens,
     interactionRounds,
     includeExternalResearch,
+    includeRedTeamPersonas,
     agentConfigs,
     hasCustomAgentConfigs,
   };

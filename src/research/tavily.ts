@@ -116,6 +116,12 @@ function decisionContext(snapshot: Record<string, unknown>): string {
 function researchLens(agentName: string): string {
   const normalized = agentName.trim().toLowerCase();
 
+  if (normalized.includes("competitor")) {
+    return "Competitor launches, pricing changes, market positioning, differentiation claims, and substitution threats.";
+  }
+  if (normalized.includes("market intelligence") || normalized.includes("market analyst")) {
+    return "Market demand, customer behavior shifts, category growth, macro drivers, and market structure changes.";
+  }
   if (normalized.includes("ceo")) {
     return "Market demand, competition, strategic positioning, and macroeconomic shifts.";
   }
