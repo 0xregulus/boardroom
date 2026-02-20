@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AgentConfig } from "../../../config/agent_config";
+import type { ResearchProvider } from "../../../research/providers";
 import type { AppStage, ApiResult, DecisionStrategy, NodeStatus, WorkflowNode, WorkflowTask } from "../types";
 import { buildInitialNodes, buildInteractionTasks, buildReviewTasks, sleep } from "../utils";
 
@@ -10,7 +11,8 @@ interface UseWorkflowRunParams {
   reviewRoleLabels: string[];
   reviewSummary: string;
   agentConfigs: AgentConfig[];
-  tavilyConfigured: boolean;
+  researchProvider: ResearchProvider;
+  researchProviderConfigured: boolean;
   onRunSuccess: (decisionId: string | null) => void;
 }
 
@@ -45,7 +47,8 @@ export function useWorkflowRun({
   reviewRoleLabels,
   reviewSummary,
   agentConfigs,
-  tavilyConfigured,
+  researchProvider,
+  researchProviderConfigured,
   onRunSuccess,
 }: UseWorkflowRunParams): UseWorkflowRunResult {
   const [nodes, setNodes] = useState<WorkflowNode[]>(() => buildInitialNodes(null));
@@ -83,6 +86,12 @@ export function useWorkflowRun({
       if (!normalized.has("resource competitor")) {
         labels.push("Resource Competitor");
       }
+      if (!normalized.has("risk agent")) {
+        labels.push("Risk Agent");
+      }
+      if (!normalized.has("devil's advocate")) {
+        labels.push("Devil's Advocate");
+      }
     }
     return labels;
   }, [reviewRoleLabels, includeRedTeamPersonas]);
@@ -95,6 +104,12 @@ export function useWorkflowRun({
   useEffect(() => {
     setPreviewIndex(0);
   }, [result]);
+
+  useEffect(() => {
+    if (!researchProviderConfigured && includeExternalResearch) {
+      setIncludeExternalResearch(false);
+    }
+  }, [includeExternalResearch, researchProviderConfigured]);
 
   useEffect(() => {
     setNodes((prev) =>
@@ -332,17 +347,19 @@ export function useWorkflowRun({
     setExpandedNodeId(null);
 
     const selectedDecisionId = decisionId.trim().length > 0 ? decisionId.trim() : selectedStrategy?.id ?? "";
-    const externalResearchEnabledForRun = tavilyConfigured && includeExternalResearch;
+    const externalResearchEnabledForRun = researchProviderConfigured && includeExternalResearch;
     const payload: {
       decisionId?: string;
       agentConfigs: AgentConfig[];
       includeExternalResearch: boolean;
+      researchProvider: ResearchProvider;
       includeRedTeamPersonas: boolean;
       includeSensitive: boolean;
       interactionRounds: number;
     } = {
       agentConfigs,
       includeExternalResearch: externalResearchEnabledForRun,
+      researchProvider,
       includeRedTeamPersonas,
       includeSensitive: true,
       interactionRounds,
@@ -361,7 +378,7 @@ export function useWorkflowRun({
     try {
       await runStep(
         "1",
-        `${inputSummary} | External research: ${externalResearchEnabledForRun ? "On" : "Off"} | Red team: ${includeRedTeamPersonas ? "On" : "Off"} | Rebuttal rounds: ${interactionRounds}`,
+        `${inputSummary} | External research: ${externalResearchEnabledForRun ? `${researchProvider}` : "Off"} | Red team: ${includeRedTeamPersonas ? "On" : "Off"} | Rebuttal rounds: ${interactionRounds}`,
         350,
       );
       await runStep("2", "Drafting strategic decision document", 450);

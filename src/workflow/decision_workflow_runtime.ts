@@ -7,6 +7,7 @@ import type { AgentConfig } from "../config/agent_config";
 import { buildDefaultAgentConfigs, normalizeAgentConfigs } from "../config/agent_config";
 import { resolveModelForProvider, resolveProvider } from "../config/llm_providers";
 import { ProviderClientRegistry } from "../llm/client";
+import { type ResearchProvider, resolveConfiguredResearchProvider } from "../research";
 import type { WorkflowState, RunWorkflowOptions } from "./states";
 import {
   DEFAULT_TEMPERATURE,
@@ -33,6 +34,7 @@ export interface WorkflowDependencies {
   maxTokens: number;
   interactionRounds: number;
   includeExternalResearch: boolean;
+  researchProvider: ResearchProvider;
   includeRedTeamPersonas: boolean;
   agentConfigs: AgentConfig[];
   hasCustomAgentConfigs: boolean;
@@ -124,6 +126,32 @@ function buildRedTeamPersonas(
       userMessage:
         "Challenge this strategy from a resource competition perspective. Force explicit trade-offs against alternative projects and recommend reallocation unless this proposal dominates on ROI, strategic leverage, and execution risk. Return strict JSON.",
     },
+    {
+      id: "risk-simulation",
+      role: "Risk Agent",
+      name: "Risk Simulation Agent",
+      provider,
+      model: resolvedModel,
+      temperature,
+      maxTokens,
+      systemMessage:
+        "ROLE: Boardroom Executive Reviewer (Risk Simulation Red Team). Quantify downside risk and prevent narrative-only optimism by grounding your review in probabilistic outcomes.",
+      userMessage:
+        "Run a risk-first review. Use the Monte Carlo signal (best/worst/expected and loss probability) when present, challenge fragile assumptions, and block if downside exposure is unacceptable versus expected return. Return strict JSON.",
+    },
+    {
+      id: "devils-advocate",
+      role: "Devil's Advocate",
+      name: "Devil's Advocate Agent",
+      provider,
+      model: resolvedModel,
+      temperature,
+      maxTokens,
+      systemMessage:
+        "ROLE: Boardroom Executive Reviewer (Devil's Advocate Red Team). Your only job is to find reasons not to proceed and expose consensus bias. Stress-test optimistic assumptions and surface decisive no-go risks.",
+      userMessage:
+        "Run a devil's-advocate review. Argue against this initiative, enumerate the strongest no-go cases, identify hidden assumptions and failure modes, and recommend rejection unless rebuttals are evidence-backed. Return strict JSON.",
+    },
   ];
 }
 
@@ -150,6 +178,7 @@ function buildAgentRuntimeOptions(runtime: ResolvedAgentRuntimeConfig, deps: Wor
     displayName: runtime.name,
     provider: runtime.provider,
     includeExternalResearch: deps.includeExternalResearch,
+    researchProvider: deps.researchProvider,
   };
 
   if (deps.hasCustomAgentConfigs) {
@@ -208,6 +237,7 @@ export function initialState(options: RunWorkflowOptions): WorkflowState {
     chairperson_evidence_citations: [],
     market_intelligence: null,
     evidence_verification: null,
+    risk_simulation: null,
   };
 }
 
@@ -250,6 +280,9 @@ export function buildDependencies(options?: Partial<RunWorkflowOptions>): Workfl
   const maxTokens = clampMaxTokens(options?.maxTokens);
   const interactionRounds = clampInteractionRounds(options?.interactionRounds);
   const includeExternalResearch = options?.includeExternalResearch ?? false;
+  const researchProvider = resolveConfiguredResearchProvider(
+    options?.researchProvider ?? process.env.BOARDROOM_RESEARCH_PROVIDER,
+  );
   const includeRedTeamPersonas =
     options?.includeRedTeamPersonas ?? parseBooleanFlag(process.env.BOARDROOM_INCLUDE_RED_TEAM_PERSONAS);
   const defaultProvider = resolveProvider(process.env.BOARDROOM_PROVIDER);
@@ -278,6 +311,7 @@ export function buildDependencies(options?: Partial<RunWorkflowOptions>): Workfl
     maxTokens,
     interactionRounds,
     includeExternalResearch,
+    researchProvider,
     includeRedTeamPersonas,
     agentConfigs,
     hasCustomAgentConfigs,

@@ -217,6 +217,7 @@ textarea {
 .agent-config-input:focus-visible,
 .agent-config-item-delete:focus-visible,
 .agent-config-advanced-toggle:focus-visible,
+.agent-config-research-toggle:focus-visible,
 .agent-config-temperature-control input[type="range"]:focus-visible,
 .pipeline-round-options button:focus-visible,
 .pipeline-back-button:focus-visible,
@@ -868,7 +869,7 @@ textarea {
   height: 100%;
   min-height: 0;
   max-height: none;
-  padding: 24px 22px;
+  padding: 15px 15px;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -887,15 +888,15 @@ textarea {
   width: 100%;
   max-width: 920px;
   min-width: 0;
-  min-height: calc(100vh - var(--header-height) - var(--footer-height) - 48px);
-  height: calc(100vh - var(--header-height) - var(--footer-height) - 48px);
+  min-height: calc(100vh - var(--header-height) - var(--footer-height) - 30px);
+  height: calc(100vh - var(--header-height) - var(--footer-height) - 30px);
   display: grid;
   align-content: stretch;
 }
 
 .workflow-runtime-layout .canvas-inner.boardroom-pulse-canvas-inner {
   min-width: 0;
-  height: calc(100vh - var(--header-height) - var(--footer-height) - 48px);
+  height: calc(100vh - var(--header-height) - var(--footer-height) - 30px);
 }
 
 .pulse-visual-grid {
@@ -3556,6 +3557,108 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.agent-config-research-card {
+  border: 1px solid var(--slate-200);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  padding: 20px 24px;
+  display: grid;
+  gap: 14px;
+}
+
+.agent-config-research-head h3 {
+  margin: 0;
+  color: var(--slate-900);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.agent-config-research-head p {
+  margin: 6px 0 0;
+  color: var(--slate-600);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.agent-config-research-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-config-research-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--slate-400);
+  flex-shrink: 0;
+}
+
+.agent-config-research-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.agent-config-research-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-config-research-option {
+  border: 1px solid var(--slate-200);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.agent-config-research-option input {
+  margin: 0;
+}
+
+.agent-config-research-option-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.agent-config-research-option-copy strong {
+  color: var(--slate-800);
+  font-size: 13px;
+}
+
+.agent-config-research-option-copy span {
+  color: var(--slate-500);
+  font-size: 11px;
+}
+
+.agent-config-research-option.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.agent-config-research-global {
+  margin: 14px 14px 0;
+  padding: 14px;
+  gap: 12px;
+  box-shadow: none;
+}
+
+.agent-config-research-global .agent-config-research-options {
+  grid-template-columns: 1fr;
 }
 
 .agent-config-group {
@@ -7323,7 +7426,8 @@ textarea {
   }
 
   .agent-config-primary-grid,
-  .agent-config-advanced-body {
+  .agent-config-advanced-body,
+  .agent-config-research-options {
     grid-template-columns: 1fr;
   }
 
@@ -7704,6 +7808,11 @@ textarea {
 
   .agent-config-advanced-card {
     border-radius: 18px;
+  }
+
+  .agent-config-research-card {
+    border-radius: 18px;
+    padding: 14px;
   }
 
   .agent-config-advanced-toggle {

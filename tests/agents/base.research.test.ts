@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const researchMocks = vi.hoisted(() => ({
-  fetchTavilyResearch: vi.fn(),
-  formatTavilyResearch: vi.fn(),
+  fetchResearch: vi.fn(),
+  formatResearch: vi.fn(),
 }));
 
-vi.mock("../../src/research/tavily", () => ({
-  fetchTavilyResearch: researchMocks.fetchTavilyResearch,
-  formatTavilyResearch: researchMocks.formatTavilyResearch,
+vi.mock("../../src/research", () => ({
+  fetchResearch: researchMocks.fetchResearch,
+  formatResearch: researchMocks.formatResearch,
 }));
 
 import { ConfiguredComplianceAgent, ConfiguredReviewAgent } from "../../src/agents/base";
@@ -45,8 +45,8 @@ describe("Agent external research wiring", () => {
   });
 
   it("injects formatted research context for review agents when enabled", async () => {
-    researchMocks.fetchTavilyResearch.mockResolvedValueOnce({ items: [] });
-    researchMocks.formatTavilyResearch.mockReturnValueOnce("## External Research (Tavily)\nURL: https://example.com");
+    researchMocks.fetchResearch.mockResolvedValueOnce({ items: [] });
+    researchMocks.formatResearch.mockReturnValueOnce("## External Research (Tavily)\nURL: https://example.com");
 
     const client = llmClientWith(validReviewJson);
 
@@ -61,11 +61,12 @@ describe("Agent external research wiring", () => {
       memory_context: { missing_sections: [] },
     });
 
-    expect(researchMocks.fetchTavilyResearch).toHaveBeenCalledWith(
+    expect(researchMocks.fetchResearch).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "CEO",
         snapshot: { id: "d-1" },
       }),
+      "Tavily",
     );
 
     const completeMock = client.complete as unknown as ReturnType<typeof vi.fn>;
@@ -74,7 +75,7 @@ describe("Agent external research wiring", () => {
   });
 
   it("skips research lookup for review agents when disabled", async () => {
-    researchMocks.formatTavilyResearch.mockReturnValueOnce("");
+    researchMocks.formatResearch.mockReturnValueOnce("");
 
     const client = llmClientWith(validReviewJson);
 
@@ -86,14 +87,14 @@ describe("Agent external research wiring", () => {
 
     await agent.evaluate({ snapshot: { id: "d-1" }, memory_context: {} });
 
-    expect(researchMocks.fetchTavilyResearch).not.toHaveBeenCalled();
+    expect(researchMocks.fetchResearch).not.toHaveBeenCalled();
     const completeMock = client.complete as unknown as ReturnType<typeof vi.fn>;
     expect(completeMock.mock.calls[0]?.[0]?.userMessage).not.toContain("External Research (Tavily)");
   });
 
   it("injects research context for compliance agent when enabled", async () => {
-    researchMocks.fetchTavilyResearch.mockResolvedValueOnce({ items: [] });
-    researchMocks.formatTavilyResearch.mockReturnValueOnce("## External Research (Tavily)\nSnippet: signal");
+    researchMocks.fetchResearch.mockResolvedValueOnce({ items: [] });
+    researchMocks.formatResearch.mockReturnValueOnce("## External Research (Tavily)\nSnippet: signal");
 
     const client = llmClientWith(validReviewJson);
     const agent = new ConfiguredComplianceAgent(client, "gpt-4o-mini", 0.2, 500, {
@@ -104,11 +105,12 @@ describe("Agent external research wiring", () => {
 
     await agent.evaluate({ snapshot: { id: "d-2" }, memory_context: {} });
 
-    expect(researchMocks.fetchTavilyResearch).toHaveBeenCalledWith(
+    expect(researchMocks.fetchResearch).toHaveBeenCalledWith(
       expect.objectContaining({
         agentName: "Compliance",
         snapshot: { id: "d-2" },
       }),
+      "Tavily",
     );
 
     const completeMock = client.complete as unknown as ReturnType<typeof vi.fn>;

@@ -1,6 +1,8 @@
 import { AgentConfig } from "../config/agent_config";
+import type { ResearchProvider } from "../research/providers";
 import { DecisionSnapshot, PRDOutput, ReviewOutput } from "../schemas";
 import { HygieneFinding } from "./hygiene";
+import type { WorkflowRiskSimulation } from "./risk_simulation";
 
 export type DecisionWorkflowState = "PROPOSED" | "REVIEWING" | "SYNTHESIZED" | "DECIDED" | "PERSISTED";
 
@@ -104,6 +106,7 @@ export interface WorkflowState {
   chairperson_evidence_citations?: string[];
   market_intelligence?: WorkflowMarketIntelligence | null;
   evidence_verification?: WorkflowEvidenceVerification | null;
+  risk_simulation?: WorkflowRiskSimulation | null;
 }
 
 export interface RunWorkflowOptions {
@@ -116,6 +119,7 @@ export interface RunWorkflowOptions {
   maxTokens?: number;
   agentConfigs?: AgentConfig[];
   includeExternalResearch?: boolean;
+  researchProvider?: ResearchProvider;
   interactionRounds?: number;
   includeRedTeamPersonas?: boolean;
 }

@@ -4,6 +4,7 @@ import {
     LLMProvider,
     PROVIDER_MODEL_OPTIONS,
 } from "../../../config/agent_config";
+import { type ResearchProvider, type ResearchProviderOption } from "../../../research/providers";
 import { AgentConfigSyncStatus } from "../types";
 import {
     agentModelMeta,
@@ -22,7 +23,10 @@ import { CORE_AGENT_IDS, PROVIDER_OPTIONS } from "../constants";
 interface AgentConfigModalProps {
     agentConfigs: AgentConfig[];
     selectedAgentId: string | null;
+    researchProvider: ResearchProvider;
+    researchOptions: ResearchProviderOption[];
     onSelectAgent: (id: string) => void;
+    onResearchProviderChange: (provider: ResearchProvider) => void;
     onAddAgent: () => void;
     onRemoveAgent: (id: string) => void;
     onUpdateAgentField: <K extends keyof AgentConfig>(id: string, field: K, value: AgentConfig[K]) => void;
@@ -37,7 +41,10 @@ interface AgentConfigModalProps {
 export function AgentConfigModal({
     agentConfigs,
     selectedAgentId,
+    researchProvider,
+    researchOptions,
     onSelectAgent,
+    onResearchProviderChange,
     onAddAgent,
     onRemoveAgent,
     onUpdateAgentField,
@@ -49,6 +56,7 @@ export function AgentConfigModal({
     onReset,
 }: AgentConfigModalProps) {
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+    const [isResearchOpen, setIsResearchOpen] = useState(false);
 
     const selectedAgentConfig = useMemo(
         () => agentConfigs.find((config) => config.id === selectedAgentId) ?? agentConfigs[0] ?? null,
@@ -96,6 +104,55 @@ export function AgentConfigModal({
                         <PlusGlyph />
                     </button>
                 </div>
+
+                <section
+                    className={`agent-config-research-card agent-config-research-global${isResearchOpen ? " open" : ""}`}
+                    aria-label="Global research tool configuration"
+                >
+                    <button
+                        type="button"
+                        className="agent-config-research-toggle"
+                        onClick={() => setIsResearchOpen((current) => !current)}
+                        aria-expanded={isResearchOpen}
+                    >
+                        <span className="agent-config-research-head">
+                            <h3>Research Tool</h3>
+                            <p>Select the grounding provider used when external research is enabled.</p>
+                        </span>
+                        <span className="agent-config-research-chevron" aria-hidden="true">
+                            <ChevronGlyph expanded={isResearchOpen} />
+                        </span>
+                    </button>
+
+                    {isResearchOpen ? (
+                        <div className="agent-config-research-options" role="radiogroup" aria-label="Research provider">
+                            {researchOptions.map((option) => {
+                                const disabled = !option.configured;
+                                return (
+                                    <label
+                                        key={option.provider}
+                                        className={`agent-config-research-option${disabled ? " disabled" : ""}`}
+                                        htmlFor={`research-provider-${option.provider.toLowerCase()}`}
+                                    >
+                                        <input
+                                            id={`research-provider-${option.provider.toLowerCase()}`}
+                                            name="research-provider"
+                                            type="radio"
+                                            value={option.provider}
+                                            checked={researchProvider === option.provider}
+                                            onChange={() => onResearchProviderChange(option.provider)}
+                                            disabled={disabled}
+                                        />
+                                        <div className="agent-config-research-option-copy">
+                                            <strong>{option.provider}</strong>
+                                            <span>{option.configured ? `Configured` : `Missing ${option.apiKeyEnv}`}</span>
+                                        </div>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    ) : null}
+                </section>
 
                 <div className="agent-config-sidebar-list" role="tablist" aria-label="Agent profile selector">
                     {agentConfigs.map((config) => {

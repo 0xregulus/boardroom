@@ -31,6 +31,8 @@ const workflowMockState = vi.hoisted(() => ({
     CFO: makeReviewOutput("CFO"),
     CTO: makeReviewOutput("CTO"),
     compliance: makeReviewOutput("Compliance"),
+    "Risk Agent": makeReviewOutput("Risk Agent"),
+    "Devil's Advocate": makeReviewOutput("Devil's Advocate"),
   } as Record<string, any>,
   synthesis: {
     executive_summary: "Synthesis",
@@ -278,11 +280,15 @@ beforeEach(() => {
   workflowMockState.reviewOutputs.CFO.score = 8;
   workflowMockState.reviewOutputs.CTO.score = 8;
   workflowMockState.reviewOutputs.compliance.score = 8;
+  workflowMockState.reviewOutputs["Risk Agent"].score = 8;
+  workflowMockState.reviewOutputs["Devil's Advocate"].score = 8;
 
   workflowMockState.reviewOutputs.CEO.blocked = false;
   workflowMockState.reviewOutputs.CFO.blocked = false;
   workflowMockState.reviewOutputs.CTO.blocked = false;
   workflowMockState.reviewOutputs.compliance.blocked = false;
+  workflowMockState.reviewOutputs["Risk Agent"].blocked = false;
+  workflowMockState.reviewOutputs["Devil's Advocate"].blocked = false;
 
   workflowMockState.synthesis = {
     executive_summary: "Synthesis",
@@ -386,10 +392,10 @@ describe("runDecisionWorkflow", () => {
   it("clamps interaction rounds to upper bound", async () => {
     const state = await runDecisionWorkflow({ decisionId: "d1", interactionRounds: 99 });
 
-    expect(state.interaction_rounds).toHaveLength(10);
+    expect(state.interaction_rounds).toHaveLength(5);
     const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
     const interactionContexts = interactionRoundContexts(allContexts);
-    expect(interactionContexts).toHaveLength(40);
+    expect(interactionContexts).toHaveLength(20);
   });
 
   it("disables external research by default", async () => {
@@ -501,8 +507,8 @@ describe("runDecisionWorkflow", () => {
     expect(state.interaction_rounds).toHaveLength(1);
     const allContexts = [...workflowMockState.reviewAgentContexts, ...workflowMockState.complianceAgentContexts];
     const interactionContexts = interactionRoundContexts(allContexts);
-    expect(interactionContexts).toHaveLength(6);
-    expect(storeMocks.upsertDecisionReview).toHaveBeenCalledTimes(7);
+    expect(interactionContexts).toHaveLength(8);
+    expect(storeMocks.upsertDecisionReview).toHaveBeenCalledTimes(9);
   });
 });
 

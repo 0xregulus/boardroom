@@ -20,6 +20,7 @@ import { retrieveDecisionAncestryContext } from "../memory/retriever";
 import { evaluateRequiredGates, GOVERNANCE_CHECKBOX_FIELDS, inferGovernanceChecksFromText } from "./gates";
 import { evaluateHygiene } from "./hygiene";
 import { buildPrdOutput } from "./prd";
+import { runRiskSimulation } from "./risk_simulation";
 import {
   AgentInteractionRound,
   DecisionAncestryMatch,
@@ -29,7 +30,7 @@ import {
   WorkflowMarketIntelligenceSignal,
   WorkflowState,
 } from "./states";
-import { fetchTavilyResearch } from "../research/tavily";
+import { fetchResearch } from "../research";
 import {
   buildDependencies,
   createReviewAgent,
@@ -83,7 +84,9 @@ function isRiskWeightedAgent(agentId: string): boolean {
     lowered === "compliance" ||
     lowered === "cfo" ||
     lowered === "pre-mortem" ||
-    lowered === "resource-competitor"
+    lowered === "resource-competitor" ||
+    lowered === "risk-simulation" ||
+    lowered === "devils-advocate"
   );
 }
 
@@ -173,7 +176,7 @@ function buildSynthesisEvidenceCitations(reviews: Record<string, ReviewOutput>):
 }
 
 function specializedConfidenceValues(reviews: Record<string, ReviewOutput>): number[] {
-  return ["cfo", "cto", "compliance", "pre-mortem", "resource-competitor"]
+  return ["cfo", "cto", "compliance", "pre-mortem", "resource-competitor", "risk-simulation", "devils-advocate"]
     .map((agentId) => reviews[agentId]?.confidence)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
@@ -277,12 +280,15 @@ async function runMarketIntelligence(state: WorkflowState, deps: WorkflowDepende
 
   const results = await Promise.all(
     [...uniqueAnalysts.values()].map(async (entry) => {
-      const report = await fetchTavilyResearch({
-        agentName: entry.analyst,
-        snapshot: state.decision_snapshot as unknown as Record<string, unknown>,
-        missingSections: state.missing_sections,
-        maxResults: 3,
-      });
+      const report = await fetchResearch(
+        {
+          agentName: entry.analyst,
+          snapshot: state.decision_snapshot as unknown as Record<string, unknown>,
+          missingSections: state.missing_sections,
+          maxResults: 3,
+        },
+        deps.researchProvider,
+      );
 
       return { entry, report };
     }),
@@ -404,6 +410,24 @@ function deriveArtifactAssistantQuestions(state: WorkflowState): string[] {
     }
   }
 
+  const riskSimulation = state.risk_simulation;
+  if (riskSimulation?.mode === "insufficient") {
+    questions.push(
+      "Risk simulation is unavailable. What Investment Required, Projected Benefit, and Probability of Success inputs will you add so probabilistic risk can be evaluated?",
+    );
+  } else if (riskSimulation?.outcomes) {
+    if (riskSimulation.outcomes.probability_of_loss >= 0.4) {
+      questions.push(
+        `Monte Carlo indicates ${Math.round(riskSimulation.outcomes.probability_of_loss * 100)}% probability of loss. What concrete mitigations reduce this below 30%?`,
+      );
+    }
+    if (riskSimulation.outcomes.worst_case.net_value < 0) {
+      questions.push(
+        "Worst-case scenario remains net negative. What staged rollout guardrails and stop-loss triggers will prevent capital destruction?",
+      );
+    }
+  }
+
   const lowConfidenceReviews = Object.values(state.reviews)
     .filter((review) => review.confidence < CONFIDENCE_THRESHOLD)
     .slice(0, 2);
@@ -519,6 +543,7 @@ async function buildDecisionState(state: WorkflowState): Promise<WorkflowState> 
   });
 
   const hygiene = evaluateHygiene(decisionSnapshot, missingSections);
+  const riskSimulation = runRiskSimulation(decisionSnapshot, state.decision_id);
 
   const nextState: WorkflowState = {
     ...state,
@@ -530,6 +555,7 @@ async function buildDecisionState(state: WorkflowState): Promise<WorkflowState> 
     decision_ancestry_retrieval_method: ancestryContext.retrieval_method,
     hygiene_score: hygiene.score,
     hygiene_findings: hygiene.findings,
+    risk_simulation: riskSimulation,
   };
 
   return {
@@ -545,6 +571,7 @@ async function runExecutiveReviews(state: WorkflowState, deps: WorkflowDependenc
     hygiene_score: state.hygiene_score ?? 0,
     hygiene_findings: state.hygiene_findings ?? [],
     market_intelligence: state.market_intelligence ?? null,
+    risk_simulation: state.risk_simulation ?? null,
   };
 
   const promises = deps.agentConfigs.map(async (config) => {
@@ -602,6 +629,7 @@ async function runInteractionRounds(state: WorkflowState, deps: WorkflowDependen
         hygiene_score: state.hygiene_score ?? 0,
         hygiene_findings: state.hygiene_findings ?? [],
         market_intelligence: state.market_intelligence ?? null,
+        risk_simulation: state.risk_simulation ?? null,
       });
 
       return { id: config.id, output };
@@ -745,6 +773,7 @@ async function synthesizeReviews(state: WorkflowState, deps: WorkflowDependencie
       },
       market_intelligence: state.market_intelligence ?? null,
       evidence_verification: state.evidence_verification ?? null,
+      risk_simulation: state.risk_simulation ?? null,
       artifact_assistant_questions: state.artifact_assistant_questions ?? [],
     },
   });

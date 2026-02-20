@@ -1,6 +1,7 @@
 import { chairpersonSynthesisSchema, ReviewOutput } from "../schemas";
 import { LLMClient } from "../llm/client";
-import { fetchTavilyResearch, formatTavilyResearch } from "../research/tavily";
+import { fetchResearch, formatResearch, type ResearchProvider } from "../research";
+import { resolveResearchProvider } from "../research/providers";
 import { sanitizeForExternalUse } from "../security/redaction";
 import { ChairpersonSynthesis } from "../workflow/states";
 import {
@@ -8,6 +9,7 @@ import {
   buildHygieneRuntimeInstruction,
   buildInteractionRuntimeInstruction,
   buildMarketIntelligenceRuntimeInstruction,
+  buildRiskSimulationRuntimeInstruction,
   buildReviewJsonContractInstruction,
   buildReviewRuntimeContextInstruction,
   loadPrompts,
@@ -30,6 +32,7 @@ export interface AgentRuntimeOptions {
   promptOverride?: PromptPayload;
   provider?: string;
   includeExternalResearch?: boolean;
+  researchProvider?: ResearchProvider;
 }
 
 
@@ -42,6 +45,7 @@ export abstract class BaseAgent {
   protected readonly temperature: number;
   protected readonly maxTokens: number;
   protected readonly includeExternalResearch: boolean;
+  protected readonly researchProvider: ResearchProvider;
 
   private prompts: PromptPayload | null;
 
@@ -61,6 +65,7 @@ export abstract class BaseAgent {
     this.temperature = temperature;
     this.maxTokens = maxTokens;
     this.includeExternalResearch = options?.includeExternalResearch ?? false;
+    this.researchProvider = resolveResearchProvider(options?.researchProvider);
     this.prompts = options?.promptOverride ?? null;
   }
 
@@ -130,13 +135,16 @@ export abstract class BaseReviewAgent extends BaseAgent {
     const governanceFieldsStr = governanceFields.length > 0 ? governanceFields.join(", ") : "None";
 
     const research = this.includeExternalResearch
-      ? await fetchTavilyResearch({
-        agentName: this.displayName,
-        snapshot: sanitizedSnapshot,
-        missingSections: missing,
-      })
+      ? await fetchResearch(
+          {
+            agentName: this.displayName,
+            snapshot: sanitizedSnapshot,
+            missingSections: missing,
+          },
+          this.researchProvider,
+        )
       : null;
-    const researchBlock = formatTavilyResearch(research);
+    const researchBlock = formatResearch(research, this.researchProvider);
 
     const baseUserMessage = this.renderUserTemplate(prompts.userTemplate, {
       snapshot_json: snapshotJson,
@@ -155,9 +163,10 @@ export abstract class BaseReviewAgent extends BaseAgent {
     const ancestryRuntimeInstruction = buildDecisionAncestryRuntimeInstruction(context.memory_context);
     const marketIntelligenceRuntimeInstruction = buildMarketIntelligenceRuntimeInstruction(context.memory_context);
     const hygieneRuntimeInstruction = buildHygieneRuntimeInstruction(context.memory_context);
+    const riskSimulationRuntimeInstruction = buildRiskSimulationRuntimeInstruction(context.memory_context);
     const userMessage = `${withResearchContext(baseUserMessage, researchBlock)}\n\n${runtimeContextInstruction}${interactionRuntimeInstruction ? `\n\n${interactionRuntimeInstruction}` : ""
       }${ancestryRuntimeInstruction ? `\n\n${ancestryRuntimeInstruction}` : ""}${marketIntelligenceRuntimeInstruction ? `\n\n${marketIntelligenceRuntimeInstruction}` : ""
-      }${hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : ""
+      }${hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : ""}${riskSimulationRuntimeInstruction ? `\n\n${riskSimulationRuntimeInstruction}` : ""
       }\n\n${buildReviewJsonContractInstruction(this.name, governanceFields)}`;
 
     try {
@@ -227,13 +236,16 @@ export class ConfiguredComplianceAgent extends BaseAgent {
     const governanceFieldsStr = governanceFields.length > 0 ? governanceFields.join(", ") : "None";
 
     const research = this.includeExternalResearch
-      ? await fetchTavilyResearch({
-        agentName: this.displayName,
-        snapshot: sanitizedSnapshot,
-        missingSections: missing,
-      })
+      ? await fetchResearch(
+          {
+            agentName: this.displayName,
+            snapshot: sanitizedSnapshot,
+            missingSections: missing,
+          },
+          this.researchProvider,
+        )
       : null;
-    const researchBlock = formatTavilyResearch(research);
+    const researchBlock = formatResearch(research, this.researchProvider);
 
     let userMessage = withResearchContext(
       this.renderUserTemplate(prompts.userTemplate, {
@@ -249,6 +261,7 @@ export class ConfiguredComplianceAgent extends BaseAgent {
     const ancestryRuntimeInstruction = buildDecisionAncestryRuntimeInstruction(context.memory_context);
     const marketIntelligenceRuntimeInstruction = buildMarketIntelligenceRuntimeInstruction(context.memory_context);
     const hygieneRuntimeInstruction = buildHygieneRuntimeInstruction(context.memory_context);
+    const riskSimulationRuntimeInstruction = buildRiskSimulationRuntimeInstruction(context.memory_context);
 
     userMessage +=
       `\n\n${buildReviewRuntimeContextInstruction(snapshotJson, missingSectionsStr, governanceFieldsStr)}` +
@@ -256,6 +269,7 @@ export class ConfiguredComplianceAgent extends BaseAgent {
       (ancestryRuntimeInstruction ? `\n\n${ancestryRuntimeInstruction}` : "") +
       (marketIntelligenceRuntimeInstruction ? `\n\n${marketIntelligenceRuntimeInstruction}` : "") +
       (hygieneRuntimeInstruction ? `\n\n${hygieneRuntimeInstruction}` : "") +
+      (riskSimulationRuntimeInstruction ? `\n\n${riskSimulationRuntimeInstruction}` : "") +
       `\n\n${buildReviewJsonContractInstruction(this.name, governanceFields)}` +
       "\nReturn concise JSON: thesis <= 60 words, max 3 blockers, max 3 risks, max 6 citations, max 3 required_changes, short evidence strings.";
 
@@ -319,6 +333,12 @@ export class ConfiguredChairpersonAgent extends BaseAgent {
     const reviewEvidenceLines = Array.isArray(context.memory_context.review_evidence_lines)
       ? context.memory_context.review_evidence_lines
       : [];
+    const riskSimulation =
+      context.memory_context.risk_simulation &&
+        typeof context.memory_context.risk_simulation === "object" &&
+        !Array.isArray(context.memory_context.risk_simulation)
+        ? context.memory_context.risk_simulation
+        : null;
     const weightedConflictSignal =
       context.memory_context.weighted_conflict_signal &&
         typeof context.memory_context.weighted_conflict_signal === "object" &&
@@ -345,6 +365,7 @@ export class ConfiguredChairpersonAgent extends BaseAgent {
       `Automated hygiene findings: ${JSON.stringify(hygieneFindings)}`,
       `Specialized confidence score: ${confidenceScore !== null ? confidenceScore.toFixed(2) : "N/A"}`,
       `Weighted conflict signal: ${JSON.stringify(weightedConflictSignal)}`,
+      riskSimulation ? `Monte Carlo risk simulation: ${JSON.stringify(riskSimulation)}` : "",
       evidenceVerification ? `Evidence verification summary: ${JSON.stringify(evidenceVerification)}` : "",
       reviewEvidenceLines.length > 0 ? `Executive evidence lines: ${JSON.stringify(reviewEvidenceLines)}` : "",
       "Weighted conflict policy: dissent from Compliance/CFO carries more weight than growth-only optimism.",

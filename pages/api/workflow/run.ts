@@ -5,6 +5,7 @@ import { AgentConfig, normalizeAgentConfigs } from "../../../src/config/agent_co
 import { enforceRateLimit, enforceSensitiveRouteAccess } from "../../../src/security/request_guards";
 import { enforceWorkflowRunPolicy } from "../../../src/security/workflow_policy";
 import { getPersistedAgentConfigs } from "../../../src/store/postgres";
+import { resolveResearchProvider } from "../../../src/research/providers";
 import { runAllProposedDecisions, runDecisionWorkflow } from "../../../src/workflow/decision_workflow";
 
 interface RunBody {
@@ -16,6 +17,7 @@ interface RunBody {
   includeRedTeamPersonas?: boolean;
   agentConfigs?: AgentConfig[];
   includeExternalResearch?: boolean;
+  researchProvider?: string;
   includeSensitive?: boolean;
 }
 
@@ -41,6 +43,7 @@ const runBodySchema = z
     includeRedTeamPersonas: z.boolean().optional(),
     agentConfigs: z.array(z.unknown()).max(32).optional(),
     includeExternalResearch: z.boolean().optional(),
+    researchProvider: z.enum(["Tavily", "Jina", "Perplexity"]).optional(),
     includeSensitive: z.boolean().optional(),
   })
   .strict();
@@ -148,6 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const body = parsedBody.data as RunBody;
     const decisionId = body.decisionId?.trim();
     const includeExternalResearch = body.includeExternalResearch === true;
+    const researchProvider = resolveResearchProvider(body.researchProvider);
     const includeSensitive = body.includeSensitive === true;
 
     if (
@@ -173,6 +177,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         includeRedTeamPersonas: body.includeRedTeamPersonas,
         agentConfigs,
         includeExternalResearch,
+        researchProvider,
       });
 
       res.status(200).json({
@@ -190,6 +195,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       includeRedTeamPersonas: body.includeRedTeamPersonas,
       agentConfigs,
       includeExternalResearch,
+      researchProvider,
     });
 
     res.status(200).json({

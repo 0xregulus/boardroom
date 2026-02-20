@@ -5,6 +5,12 @@ import { BoardroomFooter } from "../src/features/boardroom/components/BoardroomF
 import { BoardroomHeader } from "../src/features/boardroom/components/BoardroomHeader";
 import { BoardroomStageContent } from "../src/features/boardroom/components/BoardroomStageContent";
 import { useBoardroomHomeController } from "../src/features/boardroom/hooks/useBoardroomHomeController";
+import {
+  listResearchProviderOptions,
+  resolveConfiguredResearchProvider,
+  type ResearchProvider,
+  type ResearchProviderOption,
+} from "../src/research/providers";
 
 export {
   buildCreateDraftFromStrategy,
@@ -15,15 +21,26 @@ export {
   parseSectionMatrix,
 } from "../src/features/boardroom/utils";
 
-export const getServerSideProps: GetServerSideProps<{ tavilyConfigured: boolean }> = async () => ({
-  props: {
-    tavilyConfigured: (process.env.TAVILY_API_KEY ?? "").trim().length > 0,
-  },
-});
+interface HomePageProps {
+  researchToolOptions: ResearchProviderOption[];
+  defaultResearchProvider: ResearchProvider;
+}
 
-export default function Home({ tavilyConfigured }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+export const getServerSideProps: GetServerSideProps<HomePageProps> = async () => {
+  const researchToolOptions = listResearchProviderOptions(process.env);
+
+  return {
+    props: {
+      researchToolOptions,
+      defaultResearchProvider: resolveConfiguredResearchProvider(process.env.BOARDROOM_RESEARCH_PROVIDER, process.env),
+    },
+  };
+};
+
+export default function Home({ researchToolOptions, defaultResearchProvider }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const { headerProps, stageContentProps, footerProps } = useBoardroomHomeController({
-    tavilyConfigured,
+    researchToolOptions,
+    defaultResearchProvider,
   });
 
   return (

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 
 import type { AgentConfig } from "../../../config/agent_config";
+import type { ResearchProvider } from "../../../research/providers";
 import type { AppStage, DecisionStrategy, WorkflowRunStateEntry } from "../types";
 import { useWorkflowPreviewData } from "./useWorkflowPreviewData";
 import { useWorkflowRun } from "./useWorkflowRun";
@@ -9,7 +10,8 @@ interface UseBoardroomWorkflowControllerParams {
   appStage: AppStage;
   selectedStrategy: DecisionStrategy | null;
   agentConfigs: AgentConfig[];
-  tavilyConfigured: boolean;
+  researchProvider: ResearchProvider;
+  researchProviderConfigured: boolean;
   workflowRunHistoryByDecision: Record<string, WorkflowRunStateEntry[]>;
   workflowRunHistoryLoadingByDecision: Record<string, boolean>;
   workflowRunHistoryErrorByDecision: Record<string, string | null>;
@@ -22,7 +24,8 @@ export function useBoardroomWorkflowController({
   appStage,
   selectedStrategy,
   agentConfigs,
-  tavilyConfigured,
+  researchProvider,
+  researchProviderConfigured,
   workflowRunHistoryByDecision,
   workflowRunHistoryLoadingByDecision,
   workflowRunHistoryErrorByDecision,
@@ -53,7 +56,8 @@ export function useBoardroomWorkflowController({
     reviewRoleLabels,
     reviewSummary,
     agentConfigs,
-    tavilyConfigured,
+    researchProvider,
+    researchProviderConfigured,
     onRunSuccess: handleWorkflowRunSuccess,
   });
   const selectedNode = useMemo(

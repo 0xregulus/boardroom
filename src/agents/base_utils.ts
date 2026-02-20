@@ -451,6 +451,105 @@ export function buildHygieneRuntimeInstruction(memoryContext: Record<string, unk
     .join("\n");
 }
 
+export function buildRiskSimulationRuntimeInstruction(memoryContext: Record<string, unknown>): string {
+  const simulation =
+    memoryContext.risk_simulation &&
+      typeof memoryContext.risk_simulation === "object" &&
+      !Array.isArray(memoryContext.risk_simulation)
+      ? (memoryContext.risk_simulation as Record<string, unknown>)
+      : null;
+
+  if (!simulation) {
+    return "";
+  }
+
+  const mode = asString(simulation.mode) ?? "unknown";
+  const sampleSize = asNumber(simulation.sample_size);
+  const summary = asString(simulation.summary);
+  const assumptions = Array.isArray(simulation.assumptions)
+    ? simulation.assumptions
+      .filter((entry): entry is string => typeof entry === "string")
+      .slice(0, 4)
+    : [];
+
+  const outcomes =
+    simulation.outcomes &&
+      typeof simulation.outcomes === "object" &&
+      !Array.isArray(simulation.outcomes)
+      ? (simulation.outcomes as Record<string, unknown>)
+      : null;
+  const expectedCase =
+    outcomes?.expected_case &&
+      typeof outcomes.expected_case === "object" &&
+      !Array.isArray(outcomes.expected_case)
+      ? (outcomes.expected_case as Record<string, unknown>)
+      : null;
+  const worstCase =
+    outcomes?.worst_case &&
+      typeof outcomes.worst_case === "object" &&
+      !Array.isArray(outcomes.worst_case)
+      ? (outcomes.worst_case as Record<string, unknown>)
+      : null;
+  const bestCase =
+    outcomes?.best_case &&
+      typeof outcomes.best_case === "object" &&
+      !Array.isArray(outcomes.best_case)
+      ? (outcomes.best_case as Record<string, unknown>)
+      : null;
+  const probabilityOfLoss = asNumber(outcomes?.probability_of_loss);
+
+  if (!summary && !outcomes) {
+    return "";
+  }
+
+  const formatMoney = (value: number | null): string => {
+    if (value === null || !Number.isFinite(value)) {
+      return "N/A";
+    }
+    const absolute = Math.abs(value);
+    if (absolute >= 1_000_000_000) {
+      return `${value < 0 ? "-" : ""}$${(absolute / 1_000_000_000).toFixed(2)}B`;
+    }
+    if (absolute >= 1_000_000) {
+      return `${value < 0 ? "-" : ""}$${(absolute / 1_000_000).toFixed(2)}M`;
+    }
+    if (absolute >= 1_000) {
+      return `${value < 0 ? "-" : ""}$${(absolute / 1_000).toFixed(2)}K`;
+    }
+    return `${value < 0 ? "-" : ""}$${absolute.toFixed(2)}`;
+  };
+
+  const formatRate = (value: number | null): string => {
+    if (value === null || !Number.isFinite(value)) {
+      return "N/A";
+    }
+    return `${(value * 100).toFixed(1)}%`;
+  };
+
+  const expectedNet = asNumber(expectedCase?.net_value);
+  const worstNet = asNumber(worstCase?.net_value);
+  const bestNet = asNumber(bestCase?.net_value);
+  const expectedRoi = asNumber(expectedCase?.roi);
+  const worstRoi = asNumber(worstCase?.roi);
+  const bestRoi = asNumber(bestCase?.roi);
+
+  return [
+    `Monte Carlo risk simulation (${sampleSize !== null ? Math.round(sampleSize) : "N/A"} trials, mode: ${mode}).`,
+    summary ? `Risk simulation summary: ${summary}` : "",
+    outcomes
+      ? `Expected/Worst/Best net value: ${formatMoney(expectedNet)} / ${formatMoney(worstNet)} / ${formatMoney(bestNet)}`
+      : "",
+    outcomes
+      ? `Expected/Worst/Best ROI: ${formatRate(expectedRoi)} / ${formatRate(worstRoi)} / ${formatRate(bestRoi)}`
+      : "",
+    probabilityOfLoss !== null ? `Probability of loss: ${(probabilityOfLoss * 100).toFixed(1)}%.` : "",
+    assumptions.length > 0 ? `Simulation assumptions: ${JSON.stringify(assumptions)}` : "",
+    "Use this quantitative downside signal in score, blockers, risks, and required_changes. Do not rely on narrative optimism alone.",
+  ]
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+}
+
 function normalizeCitationUrl(value: unknown): string | null {
   const candidate = asString(value);
   if (!candidate) {

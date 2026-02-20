@@ -121,6 +121,7 @@ TASKS:
 2. SYNTHESIS: integrate consensus points, blockers, and residual risks.
 3. VERDICT: classify the decision as Approved, Challenged, or Blocked.
 4. EVIDENCE DISCIPLINE: ground conclusions in concrete reviewer evidence lines.
+5. QUANT RISK: integrate Monte Carlo best/worst/expected outcomes and loss probability when available.
 
 WEIGHTED POLICY:
 - Risk/compliance dissent carries more weight than growth optimism.

@@ -5,7 +5,7 @@ import * as THREE from "three";
 
 interface DecisionPulse3DProps {
   dqs: number;
-  agentInfluence: number[]; // Array of 6 values (0.0 to 1.0)
+  agentInfluence: number[]; // Array of 8 values (0.0 to 1.0)
 }
 
 const AGENT_ANCHORS: ReadonlyArray<[number, number, number]> = [
@@ -15,12 +15,14 @@ const AGENT_ANCHORS: ReadonlyArray<[number, number, number]> = [
   [0.0, -1.4, 0.35],   // Compliance (Bottom)
   [-1.15, -0.75, 0.2], // Pre-Mortem (Bottom Left)
   [-1.25, 0.5, 0.1],   // Resource Competitor (Top Left)
+  [0.0, 0.0, 1.35],    // Risk Agent (Front)
+  [0.0, 0.0, -1.35],   // Devil's Advocate (Rear)
 ];
 
 const vertexShader = `
   uniform float uTime;
-  uniform vec3 uAgentPositions[6];
-  uniform float uAgentInfluence[6];
+  uniform vec3 uAgentPositions[8];
+  uniform float uAgentInfluence[8];
   uniform float uConflict;
 
   varying vec3 vWorldNormal;
@@ -34,7 +36,7 @@ const vertexShader = `
     float localHeat = 0.0;
     vec3 radial = normalize(position);
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 8; i++) {
       vec3 anchorDir = normalize(uAgentPositions[i]);
       float dist = distance(position, uAgentPositions[i]);
       
@@ -123,7 +125,7 @@ function PulseNucleus({ dqs, agentInfluence }: DecisionPulse3DProps) {
 
   const conflictLevel = useMemo(() => {
     const peak = Math.max(...influenceArray);
-    return Math.min(1, peak * 0.8 + (influenceArray.reduce((a, b) => a + b, 0) / 6) * 0.4);
+    return Math.min(1, peak * 0.8 + (influenceArray.reduce((a, b) => a + b, 0) / 8) * 0.4);
   }, [influenceArray]);
 
   const uniforms = useMemo(() => ({

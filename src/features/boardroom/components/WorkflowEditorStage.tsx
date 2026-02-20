@@ -1,14 +1,16 @@
 import { useMemo } from "react";
 import dynamic from "next/dynamic";
 
+import type { ResearchProvider } from "../../../research/providers";
 import type { DecisionStrategy, NodeStatus, WorkflowNode, WorkflowTask } from "../types";
 
 interface WorkflowEditorStageProps {
   selectedStrategy: DecisionStrategy | null;
   includeExternalResearch: boolean;
+  researchProvider: ResearchProvider;
   includeRedTeamPersonas: boolean;
   interactionRounds: number;
-  tavilyConfigured: boolean;
+  researchProviderConfigured: boolean;
   nodes: WorkflowNode[];
   selectedNode: WorkflowNode | null;
   selectedNodeId: string | null;
@@ -37,7 +39,7 @@ interface OrbitAgentView {
   subtitle: string;
   status: NodeStatus;
   outcome: AgentOutcome;
-  tavilyActive: boolean;
+  researchActive: boolean;
   x: number;
   y: number;
   pullStrength: number;
@@ -69,6 +71,12 @@ function domainForAgent(title: string): string {
   if (normalized.includes("pre-mortem")) {
     return "Risk";
   }
+  if (normalized.includes("risk agent")) {
+    return "Risk";
+  }
+  if (normalized.includes("devil")) {
+    return "Risk";
+  }
   if (normalized.includes("competitor")) {
     return "Strategy";
   }
@@ -86,7 +94,13 @@ function outcomeForAgent(status: NodeStatus, title: string, disabled = false): A
     return { label: "Reviewing", tone: "running" };
   }
   if (status === "COMPLETED") {
-    if (title === "Pre-Mortem" || title === "Compliance" || title === "Resource Competitor") {
+    if (
+      title === "Pre-Mortem" ||
+      title === "Compliance" ||
+      title === "Resource Competitor" ||
+      title === "Risk Agent" ||
+      title === "Devil's Advocate"
+    ) {
       return { label: "Challenged", tone: "challenged" };
     }
     return { label: "Approved", tone: "approved" };
@@ -135,7 +149,9 @@ const REVIEWER_SPECS: ReadonlyArray<{ title: string; subtitle: string; requiresR
   { title: "CTO", subtitle: "Technical feasibility" },
   { title: "Compliance", subtitle: "Legal & governance" },
   { title: "Pre-Mortem", subtitle: "Failure-chain stress test", requiresRedTeam: true },
+  { title: "Risk Agent", subtitle: "Monte Carlo downside envelope", requiresRedTeam: true },
   { title: "Resource Competitor", subtitle: "Competing allocation pressure", requiresRedTeam: true },
+  { title: "Devil's Advocate", subtitle: "No-go case pressure test", requiresRedTeam: true },
 ];
 
 const REBUTTAL_ROUND_OPTIONS: readonly number[] = [1, 2, 3, 4, 5];
@@ -151,9 +167,10 @@ const DecisionPulse3D = dynamic(
 
 export function WorkflowEditorStage({
   includeExternalResearch,
+  researchProvider,
   includeRedTeamPersonas,
   interactionRounds,
-  tavilyConfigured,
+  researchProviderConfigured,
   nodes,
   selectedNode,
   selectedNodeId,
@@ -222,7 +239,7 @@ export function WorkflowEditorStage({
 
     const centerX = ORBIT_CENTER_X;
     const centerY = ORBIT_CENTER_Y;
-    const radius = 266;
+    const radius = 306;
     const slotCount = renderedReviewers.length;
     const angleStep = (Math.PI * 2) / slotCount;
 
@@ -240,7 +257,7 @@ export function WorkflowEditorStage({
             : outcome.tone === "blocked"
               ? 14
               : 0;
-      const dynamicRadius = Math.max(208, radius - pullStrength);
+      const dynamicRadius = Math.max(246, radius - pullStrength);
       const x = centerX + Math.cos(angle) * dynamicRadius;
       const y = centerY + Math.sin(angle) * dynamicRadius;
 
@@ -251,7 +268,7 @@ export function WorkflowEditorStage({
         subtitle: reviewer.subtitle,
         status,
         outcome,
-        tavilyActive: Boolean(includeExternalResearch) && status === "RUNNING",
+        researchActive: Boolean(includeExternalResearch) && status === "RUNNING",
         x,
         y,
         pullStrength,
@@ -305,6 +322,8 @@ export function WorkflowEditorStage({
       influenceFromAgent(index.get("compliance")),
       influenceFromAgent(index.get("pre-mortem")),
       influenceFromAgent(index.get("resource-competitor")),
+      influenceFromAgent(index.get("risk-agent")),
+      influenceFromAgent(index.get("devil-s-advocate")),
     ];
   }, [orbitAgents]);
 
@@ -333,17 +352,17 @@ export function WorkflowEditorStage({
     });
   }, [parsedLogLines]);
 
-  const tavilyEvidence = useMemo(() => {
+  const researchEvidence = useMemo(() => {
     if (!includeExternalResearch) {
       return [];
     }
 
-    const activeResearchers = orbitAgents.filter((agent) => agent.tavilyActive);
+    const activeResearchers = orbitAgents.filter((agent) => agent.researchActive);
     if (activeResearchers.length > 0) {
       return activeResearchers.map((agent) => ({
         id: `live-${agent.id}`,
         source: `${agent.domain.toUpperCase()} AGENT`,
-        note: `${agent.title} scanning web sources for counter-evidence.`,
+        note: `${agent.title} scanning ${researchProvider} sources for counter-evidence.`,
       }));
     }
 
@@ -353,9 +372,9 @@ export function WorkflowEditorStage({
       .map((agent, index) => ({
         id: `evidence-${agent.id}`,
         source: `${agent.domain.toUpperCase()} ${index + 1}`,
-        note: `${agent.title} validated external benchmark assumptions.`,
+        note: `${agent.title} validated external benchmark assumptions via ${researchProvider}.`,
       }));
-  }, [includeExternalResearch, orbitAgents]);
+  }, [includeExternalResearch, orbitAgents, researchProvider]);
 
   const executionTraceEntries = useMemo(() => {
     const refinementEntries = refinementFeed.map((entry) => ({
@@ -365,15 +384,15 @@ export function WorkflowEditorStage({
       message: entry.message,
     }));
 
-    const tavilyEntries = tavilyEvidence.map((entry) => ({
-      id: `tavily-${entry.id}`,
+    const researchEntries = researchEvidence.map((entry) => ({
+      id: `research-${entry.id}`,
       timestamp: null,
-      tag: "TAVILY",
+      tag: researchProvider.toUpperCase(),
       message: `${entry.source}: ${entry.note}`,
     }));
 
-    return [...refinementEntries, ...tavilyEntries].slice(-14);
-  }, [refinementFeed, tavilyEvidence]);
+    return [...refinementEntries, ...researchEntries].slice(-14);
+  }, [refinementFeed, researchEvidence, researchProvider]);
 
   const pulseStateClass = executionSnapshot.state.toLowerCase().replace(/\s+/g, "-");
   const selectedStep = selectedNode ?? nodeIndex.get(selectedNodeId ?? "") ?? stageSteps[0] ?? null;
@@ -393,7 +412,7 @@ export function WorkflowEditorStage({
                       <path d="M8 2c1.8 1.8 1.8 10.2 0 12" />
                       <path d="M8 2c-1.8 1.8-1.8 10.2 0 12" />
                     </svg>
-                    Research
+                    Research: {researchProvider}
                   </span>
                 ) : null}
 
@@ -497,7 +516,7 @@ export function WorkflowEditorStage({
                         </div>
                         <h4>{agent.title}</h4>
                         <p>{agent.subtitle}</p>
-                        {agent.tavilyActive ? <span className="orbit-tavily-indicator">Tavily</span> : null}
+                        {agent.researchActive ? <span className="orbit-tavily-indicator">{researchProvider}</span> : null}
                       </button>
                     ))}
                   </div>
@@ -516,15 +535,15 @@ export function WorkflowEditorStage({
               <label className="workflow-control-toggle" htmlFor="editor-enable-research">
                 <div>
                   <strong>Enable Research</strong>
-                  <p>Use external web research during executive reviews.</p>
+                  <p>Use {researchProvider} web research during executive reviews.</p>
                 </div>
-                <span className={`pipeline-switch${!tavilyConfigured ? " disabled" : ""}`}>
+                <span className={`pipeline-switch${!researchProviderConfigured ? " disabled" : ""}`}>
                   <input
                     id="editor-enable-research"
                     type="checkbox"
                     checked={includeExternalResearch}
                     onChange={(event) => onIncludeExternalResearchChange(event.target.checked)}
-                    disabled={!tavilyConfigured}
+                    disabled={!researchProviderConfigured}
                   />
                   <span className="pipeline-switch-track" />
                 </span>
@@ -533,7 +552,7 @@ export function WorkflowEditorStage({
               <label className="workflow-control-toggle" htmlFor="editor-enable-red-team">
                 <div>
                   <strong>Enable Red-Team</strong>
-                  <p>Activate Pre-Mortem and Resource Competitor reviewers.</p>
+                  <p>Activate Pre-Mortem, Resource Competitor, Risk Agent, and Devil&apos;s Advocate reviewers.</p>
                 </div>
                 <span className="pipeline-switch">
                   <input

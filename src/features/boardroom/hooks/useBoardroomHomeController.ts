@@ -1,5 +1,6 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { ResearchProvider, ResearchProviderOption } from "../../../research/providers";
 import type { DecisionStrategy } from "../types";
 import { useAgentConfigs } from "./useAgentConfigs";
 import { useBoardroomActions } from "./useBoardroomActions";
@@ -11,10 +12,14 @@ import { useStrategyDetailsLoader } from "./useStrategyDetailsLoader";
 import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
 
 interface UseBoardroomHomeControllerParams {
-  tavilyConfigured: boolean;
+  researchToolOptions: ResearchProviderOption[];
+  defaultResearchProvider: ResearchProvider;
 }
 
-export function useBoardroomHomeController({ tavilyConfigured }: UseBoardroomHomeControllerParams) {
+export function useBoardroomHomeController({
+  researchToolOptions,
+  defaultResearchProvider,
+}: UseBoardroomHomeControllerParams) {
   const {
     appStage,
     workspaceView,
@@ -81,6 +86,27 @@ export function useBoardroomHomeController({ tavilyConfigured }: UseBoardroomHom
     toggleRisk,
   } = useBoardroomStrategyController();
 
+  const [researchProvider, setResearchProvider] = useState<ResearchProvider>(defaultResearchProvider);
+  const configuredResearchProviders = useMemo(
+    () => new Set(researchToolOptions.filter((option) => option.configured).map((option) => option.provider)),
+    [researchToolOptions],
+  );
+
+  useEffect(() => {
+    if (configuredResearchProviders.size === 0) {
+      return;
+    }
+
+    if (!configuredResearchProviders.has(researchProvider)) {
+      const fallback = researchToolOptions.find((option) => option.configured)?.provider;
+      if (fallback) {
+        setResearchProvider(fallback);
+      }
+    }
+  }, [configuredResearchProviders, researchProvider, researchToolOptions]);
+
+  const researchProviderConfigured = configuredResearchProviders.has(researchProvider);
+
   const {
     nodes,
     selectedNode,
@@ -122,7 +148,8 @@ export function useBoardroomHomeController({ tavilyConfigured }: UseBoardroomHom
     appStage,
     selectedStrategy,
     agentConfigs,
-    tavilyConfigured,
+    researchProvider,
+    researchProviderConfigured,
     workflowRunHistoryByDecision,
     workflowRunHistoryLoadingByDecision,
     workflowRunHistoryErrorByDecision,
@@ -238,6 +265,8 @@ export function useBoardroomHomeController({ tavilyConfigured }: UseBoardroomHom
     agentConfig: {
       agentConfigs,
       selectedAgentId,
+      researchProvider,
+      researchOptions: researchToolOptions,
       onSelectAgent: setSelectedAgentId,
       onAddAgent: addCustomReviewAgent,
       onRemoveAgent: removeAgentById,
@@ -248,13 +277,15 @@ export function useBoardroomHomeController({ tavilyConfigured }: UseBoardroomHom
       isDirty,
       onSave: saveConfigs,
       onReset: resetConfigs,
+      onResearchProviderChange: setResearchProvider,
     },
     editor: {
       selectedStrategy,
       includeExternalResearch,
+      researchProvider,
       includeRedTeamPersonas,
       interactionRounds,
-      tavilyConfigured,
+      researchProviderConfigured,
       nodes,
       selectedNode,
       selectedNodeId,

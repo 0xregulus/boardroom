@@ -209,6 +209,49 @@ describe("API /api/workflow/run", () => {
     expect(mock.statusCode).toBe(200);
   });
 
+  it("passes researchProvider when provided", async () => {
+    mocks.getPersistedAgentConfigs.mockResolvedValueOnce([{ id: "ceo" }]);
+    mocks.normalizeAgentConfigs.mockReturnValueOnce([{ id: "ceo" }]);
+    mocks.runDecisionWorkflow.mockResolvedValueOnce({ decision_id: "d-1" });
+
+    const req = createMockRequest({
+      method: "POST",
+      body: {
+        decisionId: "d-1",
+        includeExternalResearch: true,
+        researchProvider: "Jina",
+      },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    expect(mocks.runDecisionWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decisionId: "d-1",
+        includeExternalResearch: true,
+        researchProvider: "Jina",
+      }),
+    );
+    expect(mock.statusCode).toBe(200);
+  });
+
+  it("returns 400 when researchProvider is invalid", async () => {
+    const req = createMockRequest({
+      method: "POST",
+      body: {
+        decisionId: "d-1",
+        researchProvider: "Unknown",
+      },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    expect(mock.statusCode).toBe(400);
+    expect(mock.body).toEqual({ error: "Invalid request payload" });
+  });
+
   it("passes interactionRounds when provided", async () => {
     mocks.getPersistedAgentConfigs.mockResolvedValueOnce([{ id: "ceo" }]);
     mocks.normalizeAgentConfigs.mockReturnValueOnce([{ id: "ceo" }]);
