@@ -18,7 +18,7 @@ From Dashboard strategy details, selecting **Run Analysis** opens the **Workflow
 ### Workflow Editor aside
 - Always visible during execution.
 - Includes run controls:
-  - `Enable Tavily Research`
+  - `Enable Research`
   - `Enable Red-Team`
   - `Cross-Agent Rebuttal Rounds` (`0..3`)
 - Includes `Execution Trace`.
@@ -27,7 +27,7 @@ From Dashboard strategy details, selecting **Run Analysis** opens the **Workflow
 - Unified stream that includes:
   - pipeline execution events,
   - refinement/debate events,
-  - Tavily/external evidence events.
+  - external evidence events.
 
 ## 2) Live Governance Briefing (Report Surface)
 

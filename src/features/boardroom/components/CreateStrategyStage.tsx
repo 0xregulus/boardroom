@@ -6,7 +6,6 @@ import type {
 } from "../types";
 import { CreateStrategyArtifactSections } from "./CreateStrategyArtifactSections";
 import { CreateStrategyConfigPanels } from "./CreateStrategyConfigPanels";
-import { CreateStrategySocraticAssistant } from "./CreateStrategySocraticAssistant";
 
 interface CreateStrategyStageProps {
   createDraft: CreateStrategyDraft;
@@ -93,12 +92,6 @@ export function CreateStrategyStage({
               onUpdateCoreProperty={onUpdateCoreProperty}
               onUpdateCapitalAllocation={onUpdateCapitalAllocation}
               onUpdateRiskProperty={onUpdateRiskProperty}
-            />
-
-            <CreateStrategySocraticAssistant
-              createDraft={createDraft}
-              isCreateReadOnly={isCreateReadOnly}
-              onUpdateSection={onUpdateSection}
             />
 
             <CreateStrategyArtifactSections

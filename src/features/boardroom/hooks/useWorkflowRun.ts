@@ -52,7 +52,7 @@ export function useWorkflowRun({
   const [decisionId, setDecisionId] = useState("");
   const [includeExternalResearch, setIncludeExternalResearch] = useState(false);
   const [includeRedTeamPersonas, setIncludeRedTeamPersonas] = useState(false);
-  const [interactionRounds, setInteractionRounds] = useState(5);
+  const [interactionRounds, setInteractionRounds] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);

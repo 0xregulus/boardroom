@@ -1022,7 +1022,7 @@ export function buildReviewTasks(reviewRoles: string[]): WorkflowTask[] {
 }
 
 export function buildInteractionTasks(interactionRounds: number): WorkflowTask[] {
-  const normalized = Math.max(0, Math.min(10, Math.round(interactionRounds)));
+  const normalized = Math.max(0, Math.min(5, Math.round(interactionRounds)));
   const tasks: WorkflowTask[] = [];
 
   for (let round = 1; round <= normalized; round += 1) {
@@ -1039,7 +1039,7 @@ export function buildInteractionTasks(interactionRounds: number): WorkflowTask[]
 export function buildInitialNodes(
   strategyName?: string | null,
   reviewRoles: string[] = REVIEW_ORDER,
-  interactionRounds = 5,
+  interactionRounds = 1,
 ): WorkflowNode[] {
   const inputSubtitle = strategyName ? strategyName : "No Strategy Selected";
   const interactionTasks = buildInteractionTasks(interactionRounds);

@@ -111,15 +111,6 @@ function formatAgentSummaryLabel(agent: string, fallbackIndex: number): string {
   return `${agent.trim().toUpperCase() || `REVIEW ${fallbackIndex + 1}`}`;
 }
 
-function normalizeSectionLabel(section: string): string {
-  return section
-    .replaceAll("_", " ")
-    .replaceAll("-", " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
-}
-
 function extractChairpersonCitations(activeReport: ReportWorkflowState): string[] {
   const synthesisCitations = Array.isArray(activeReport.synthesis?.evidence_citations)
     ? activeReport.synthesis.evidence_citations
@@ -229,46 +220,6 @@ export function WorkflowPreviewStage({
     ? `${primaryHygieneIssue.status === "fail" ? "Critical Failure" : "Governance Gap"}: ${primaryHygieneIssue.detail}`
     : "Controls are aligned with current governance expectations.";
 
-  const consensusPoints = useMemo(() => {
-    const synthesisPoints = activeReport?.synthesis?.consensus_points ?? [];
-    if (synthesisPoints.length > 0) {
-      return synthesisPoints.slice(0, 3);
-    }
-
-    const points: string[] = [];
-    const nonBlocked = activeReviews.filter((review) => !review.blocked);
-    if (activeReviews.length > 0 && nonBlocked.length >= Math.ceil(activeReviews.length * 0.6)) {
-      points.push("Most reviewers agree the strategy is directionally sound for execution.");
-    }
-    if (activeMetrics?.roi !== null && activeMetrics?.roi !== undefined) {
-      points.push(`Risk-adjusted ROI converges around ${activeMetrics.roi.toFixed(2)}x across reviewer models.`);
-    }
-    if (activeReviews.some((review) => review.citations.length > 0)) {
-      points.push("External market evidence materially influenced the final scoring model.");
-    }
-    if (points.length === 0) {
-      points.push("Consensus remains limited; governance and execution confidence are still being resolved.");
-    }
-    return points.slice(0, 3);
-  }, [activeMetrics?.roi, activeReport?.synthesis?.consensus_points, activeReviews]);
-
-  const contentionPoint = useMemo(() => {
-    const synthesisContention = activeReport?.synthesis?.point_of_contention?.trim();
-    if (synthesisContention) {
-      return synthesisContention;
-    }
-
-    const interactionSummary = activeReport?.interaction_rounds?.at(-1)?.summary?.trim();
-    if (interactionSummary) {
-      return interactionSummary;
-    }
-    const blocker = activeReviews.find((review) => review.blockers.length > 0)?.blockers[0];
-    if (blocker) {
-      return blocker;
-    }
-    return "No major contention captured in this run.";
-  }, [activeReport?.interaction_rounds, activeReport?.synthesis?.point_of_contention, activeReviews]);
-
   const evidenceItems = useMemo(() => {
     const rows: Array<{ id: string; label: string; text: string; url: string | null }> = [];
     citations.forEach((entry, index) => {
@@ -321,22 +272,6 @@ export function WorkflowPreviewStage({
     }));
   }, [auditEntries, evidenceItems]);
 
-  const riskRegister = useMemo(() => {
-    const items: string[] = [];
-    const residualRisks = activeReport?.synthesis?.residual_risks ?? [];
-    residualRisks.forEach((risk) => items.push(risk));
-    qualityRows
-      .filter((row) => row.status !== "pass")
-      .forEach((row) => items.push(row.detail));
-    activeReviews.forEach((review) => {
-      review.blockers.forEach((blocker) => items.push(blocker));
-    });
-    const unique = [...new Set(items.map((entry) => entry.trim()).filter((entry) => entry.length > 0))];
-    return unique.slice(0, 6);
-  }, [activeReport?.synthesis?.residual_risks, activeReviews, qualityRows]);
-
-  const prdSections = Object.entries(activeReport?.prd?.sections ?? {});
-
   const gaugeRadius = 110;
   const gaugeCircumference = 2 * Math.PI * gaugeRadius;
   const gaugeSweepRatio = 0.7;
@@ -372,242 +307,184 @@ export function WorkflowPreviewStage({
 
           {error ? <div className="preview-error">{error}</div> : null}
 
-          <div className="briefing-grid">
-            <section className="briefing-column">
-              <article className={`briefing-card outcome-card tone-${decisionTone}`}>
-                <header>
-                  <span className="briefing-kicker">Executive Summary</span>
-                  <span className={`briefing-status tone-${decisionTone}`}>{decisionStatus.toUpperCase()}</span>
-                </header>
-                <h2>{activeReport.decision_name}</h2>
-                <p className="briefing-verdict">
-                  {summaryLine || activeReport.synthesis?.executive_summary || "No chairperson verdict generated."}
-                </p>
-                <p className="briefing-meta">
-                  Decision ID
-                  {" · "}
-                  <strong>{activeReport.decision_id.toUpperCase()}</strong>
-                </p>
-              </article>
+          <div className="briefing-grid structured-report-grid">
+            <article className={`briefing-card outcome-card tone-${decisionTone} layout-row-1-main`}>
+              <header>
+                <span className="briefing-kicker">Executive Summary</span>
+                <span className={`briefing-status tone-${decisionTone}`}>{decisionStatus.toUpperCase()}</span>
+              </header>
+              <h2>{activeReport.decision_name}</h2>
+              <p className="briefing-verdict">
+                {summaryLine || activeReport.synthesis?.executive_summary || "No chairperson verdict generated."}
+              </p>
+              <p className="briefing-meta">
+                Decision ID
+                {" · "}
+                <strong>{activeReport.decision_id.toUpperCase()}</strong>
+              </p>
+            </article>
 
-              <article className="briefing-card pulse-card">
-                <h3>Decision Pulse & DQS</h3>
-                <div className="report-v3-gauge">
-                  <svg viewBox="0 0 280 280" aria-hidden="true">
-                    <circle
-                      className="report-v3-gauge-track"
-                      cx="140"
-                      cy="140"
-                      r={gaugeRadius}
-                      strokeDasharray={gaugeTrackDasharray}
-                    />
-                    <circle
-                      className={`report-v3-gauge-fill tone-${gaugeTone}`}
-                      cx="140"
-                      cy="140"
-                      r={gaugeRadius}
-                      strokeDasharray={gaugeFillDasharray}
-                      strokeDashoffset={0}
-                    />
-                  </svg>
-                  <div className={`report-v3-gauge-value tone-${gaugeTone}`}>
-                    <strong>{dqsPercent.toFixed(1)}</strong>
-                    <span>/ 100.0 DQS</span>
-                  </div>
+            <article className="briefing-card pulse-card layout-row-1-side">
+              <h3>Decision Pulse & DQS</h3>
+              <div className="report-v3-gauge">
+                <svg viewBox="0 0 280 280" aria-hidden="true">
+                  <circle
+                    className="report-v3-gauge-track"
+                    cx="140"
+                    cy="140"
+                    r={gaugeRadius}
+                    strokeDasharray={gaugeTrackDasharray}
+                  />
+                  <circle
+                    className={`report-v3-gauge-fill tone-${gaugeTone}`}
+                    cx="140"
+                    cy="140"
+                    r={gaugeRadius}
+                    strokeDasharray={gaugeFillDasharray}
+                    strokeDashoffset={0}
+                  />
+                </svg>
+                <div className={`report-v3-gauge-value tone-${gaugeTone}`}>
+                  <strong>{dqsPercent.toFixed(1)}</strong>
+                  <span>/ 100.0 DQS</span>
                 </div>
-                <div className="briefing-governance-stats">
-                  <span>{blockedReviewCount} blocked reviews</span>
-                  <span>{missingSectionCount} missing sections</span>
-                </div>
-              </article>
-            </section>
+              </div>
+              <div className="briefing-governance-stats">
+                <span>{blockedReviewCount} blocked reviews</span>
+                <span>{missingSectionCount} missing sections</span>
+              </div>
+            </article>
 
-            <section className="briefing-column">
-              <article className="briefing-card scorecard-card">
-                <h3>Substance vs. Hygiene</h3>
-                <table className="briefing-score-table">
-                  <thead>
-                    <tr>
-                      <th>Dimension</th>
-                      <th>Score</th>
-                      <th>Primary Driver</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Substance</td>
-                      <td>{Math.round(substancePercent)}/100</td>
-                      <td>{substanceDriver}</td>
-                    </tr>
-                    <tr>
-                      <td>Hygiene</td>
-                      <td>{Math.round(hygienePercent)}/100</td>
-                      <td>{hygieneDriver}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </article>
+            <article className="briefing-card scorecard-card layout-row-2-main">
+              <h3>Substance vs. Hygiene</h3>
+              <table className="briefing-score-table">
+                <thead>
+                  <tr>
+                    <th>Dimension</th>
+                    <th>Score</th>
+                    <th>Primary Driver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Substance</td>
+                    <td>{Math.round(substancePercent)}/100</td>
+                    <td>{substanceDriver}</td>
+                  </tr>
+                  <tr>
+                    <td>Hygiene</td>
+                    <td>{Math.round(hygienePercent)}/100</td>
+                    <td>{hygieneDriver}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </article>
 
-              <article className="briefing-card persona-card">
-                <h3>Agent Personas</h3>
-                <div className="briefing-persona-grid">
-                  {activeReviews.slice(0, 6).map((review, index) => {
-                    const personaScore = Math.round(clampPercent(review.score * 10));
-                    const personaStatus = review.blocked ? "Blocked" : review.confidence < 0.65 ? "Challenged" : "Aligned";
-                    const personaTone = review.blocked ? "blocked" : review.confidence < 0.65 ? "challenged" : "aligned";
+            <article className="briefing-card persona-card layout-row-2-side">
+              <h3>Agent Personas</h3>
+              <div className="briefing-persona-strip">
+                {activeReviews.slice(0, 6).map((review, index) => {
+                  const personaScore = Math.round(clampPercent(review.score * 10));
+                  const personaStatus = review.blocked ? "Blocked" : review.confidence < 0.65 ? "Challenged" : "Aligned";
+                  const personaTone = review.blocked ? "blocked" : review.confidence < 0.65 ? "challenged" : "aligned";
 
-                    return (
-                      <article key={`${review.agent}-${index}`}>
-                        <div className="briefing-persona-head">
-                          <span>{formatAgentSummaryLabel(review.agent, index)}</span>
-                          <span className={`persona-badge tone-${personaTone}`}>{personaStatus}</span>
-                        </div>
-                        <strong>{personaScore}/100</strong>
-                        <div
-                          className="persona-progress"
-                          role="progressbar"
-                          aria-label={`${formatAgentSummaryLabel(review.agent, index)} score`}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={personaScore}
-                        >
-                          <span className={`persona-progress-fill tone-${personaTone}`} style={{ width: `${personaScore}%` }} />
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              </article>
+                  return (
+                    <article key={`${review.agent}-${index}`} className={`persona-strip-row tone-${personaTone}`}>
+                      <div className="persona-strip-head">
+                        <span className="persona-strip-label">{formatAgentSummaryLabel(review.agent, index)}</span>
+                        <strong className="persona-strip-score">{personaScore}</strong>
+                        <span className={`persona-badge tone-${personaTone}`}>{personaStatus}</span>
+                      </div>
+                      <div
+                        className="persona-strip-progress"
+                        role="progressbar"
+                        aria-label={`${formatAgentSummaryLabel(review.agent, index)} score`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={personaScore}
+                      >
+                        <span className={`persona-strip-progress-fill tone-${personaTone}`} style={{ width: `${personaScore}%` }} />
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </article>
 
-              <article className="briefing-card artifacts-card">
-                <h3>Actionable Artifacts</h3>
-                <div className="briefing-artifact-block">
-                  <h4>PRD</h4>
-                  <p>
-                    {activeReport.prd
-                      ? `Auto-generated with ${activeReport.prd.milestones.length} milestones and ${activeReport.prd.telemetry.length} telemetry checks.`
-                      : "No PRD generated yet."}
+            <article className="briefing-card citations-card layout-row-3-col-1">
+              <h3>External Citations</h3>
+              <div className="briefing-citation-list">
+                {evidenceItems.length > 0 ? (
+                  evidenceItems.map((item) => (
+                    <article key={item.id}>
+                      <span>{item.label}</span>
+                      {item.url ? (
+                        <a href={item.url} target="_blank" rel="noreferrer">{item.text}</a>
+                      ) : (
+                        <p>{item.text}</p>
+                      )}
+                    </article>
+                  ))
+                ) : (
+                  <p className="empty-hint">No external citations attached to this run.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="briefing-card feed-card research-feed-card layout-row-3-col-2">
+              <h3>Live Research Feed</h3>
+              <div className="briefing-feed-list">
+                {liveResearchFeed.map((item) => (
+                  <p key={item.id}>
+                    <span>{item.ts}</span>
+                    <strong>[{item.source}]</strong>
+                    {item.detail}
                   </p>
-                  {prdSections.length > 0 ? (
-                    <ul>
-                      {prdSections.slice(0, 3).map(([section]) => (
-                        <li key={section}>{normalizeSectionLabel(section)}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-                <div className="briefing-artifact-block">
-                  <h4>Risk Register</h4>
-                  {riskRegister.length > 0 ? (
-                    <ul>
-                      {riskRegister.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>No active risk items generated in this run.</p>
-                  )}
-                </div>
-                <div className="briefing-artifact-actions">
-                  <button type="button" className="briefing-vault-btn">Save to Vault</button>
-                  <span>
-                    Decision Ancestry
-                    {" · "}
-                    {activeReport.decision_ancestry_retrieval_method === "vector-db" ? "Vector DB" : "Lexical fallback"}
-                  </span>
-                </div>
-              </article>
-            </section>
+                ))}
+              </div>
+            </article>
 
-            <aside className="briefing-column">
-              <article className="briefing-card evidence-card">
-                <h3>Debate Summary</h3>
-                <h4>Consensus Points</h4>
+            <article className="briefing-card feed-card refinement-feed-card layout-row-3-col-3">
+              <h3>Refinement Log</h3>
+              <div className="briefing-feed-list">
+                {auditEntries.length > 0 ? (
+                  auditEntries.slice(-8).map((entry) => (
+                    <p key={entry.id}>
+                      <span>{entry.timestamp ?? "--:--:--"}</span>
+                      <strong>[{entry.type.replace("_", " ")}]</strong>
+                      {entry.message}
+                    </p>
+                  ))
+                ) : (
+                  <p className="empty-hint">Waiting for refinement rounds.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="briefing-card ancestry-card layout-row-4-full">
+              <h3>Decision Ancestry</h3>
+              <p className="briefing-ancestry-meta">
+                Retrieval
+                {" · "}
+                {activeReport.decision_ancestry_retrieval_method === "vector-db"
+                  ? "Vector DB"
+                  : activeReport.decision_ancestry_retrieval_method === "lexical-fallback"
+                    ? "Lexical fallback"
+                    : "Not available"}
+              </p>
+              {decisionAncestry.length > 0 ? (
                 <ul>
-                  {consensusPoints.map((point) => (
-                    <li key={point}>{point}</li>
+                  {decisionAncestry.slice(0, 3).map((match) => (
+                    <li key={match.decision_id}>
+                      <strong>{match.decision_name}</strong>
+                      <span>{Math.round(match.similarity * 100)}% similarity</span>
+                    </li>
                   ))}
                 </ul>
-                <h4>Point of Contention</h4>
-                <p>{contentionPoint}</p>
-                {activeReport.synthesis?.residual_risks?.length ? (
-                  <>
-                    <h4>Residual Risks</h4>
-                    <ul>
-                      {activeReport.synthesis.residual_risks.slice(0, 3).map((risk) => (
-                        <li key={risk}>{risk}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-              </article>
-
-              <article className="briefing-card citations-card">
-                <h3>External Citations</h3>
-                <div className="briefing-citation-list">
-                  {evidenceItems.length > 0 ? (
-                    evidenceItems.map((item) => (
-                      <article key={item.id}>
-                        <span>{item.label}</span>
-                        {item.url ? (
-                          <a href={item.url} target="_blank" rel="noreferrer">{item.text}</a>
-                        ) : (
-                          <p>{item.text}</p>
-                        )}
-                      </article>
-                    ))
-                  ) : (
-                    <p className="empty-hint">No external citations attached to this run.</p>
-                  )}
-                </div>
-              </article>
-
-              <article className="briefing-card feed-card">
-                <h3>Live Research Feed</h3>
-                <div className="briefing-feed-list">
-                  {liveResearchFeed.map((item) => (
-                    <p key={item.id}>
-                      <span>{item.ts}</span>
-                      <strong>[{item.source}]</strong>
-                      {item.detail}
-                    </p>
-                  ))}
-                </div>
-              </article>
-
-              <article className="briefing-card feed-card">
-                <h3>Refinement Log</h3>
-                <div className="briefing-feed-list">
-                  {auditEntries.length > 0 ? (
-                    auditEntries.slice(-8).map((entry) => (
-                      <p key={entry.id}>
-                        <span>{entry.timestamp ?? "--:--:--"}</span>
-                        <strong>[{entry.type.replace("_", " ")}]</strong>
-                        {entry.message}
-                      </p>
-                    ))
-                  ) : (
-                    <p className="empty-hint">Waiting for refinement rounds.</p>
-                  )}
-                </div>
-              </article>
-
-              <article className="briefing-card ancestry-card">
-                <h3>Decision Ancestry</h3>
-                {decisionAncestry.length > 0 ? (
-                  <ul>
-                    {decisionAncestry.slice(0, 3).map((match) => (
-                      <li key={match.decision_id}>
-                        <strong>{match.decision_name}</strong>
-                        <span>{Math.round(match.similarity * 100)}% similarity</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-hint">No ancestry matches stored for this decision yet.</p>
-                )}
-              </article>
-            </aside>
+              ) : (
+                <p className="empty-hint">No ancestry matches stored for this decision yet.</p>
+              )}
+            </article>
           </div>
         </div>
       ) : (

@@ -103,11 +103,15 @@ export function DecisionAncestryPanel({
       <header className="ancestry-memory-header">
         <div className="ancestry-memory-title-wrap">
           <span className="ancestry-memory-icon" aria-hidden="true">
-            ↻
+            <svg viewBox="0 0 16 16" className="ancestry-memory-icon-svg">
+              <circle cx="8" cy="8" r="3.75" />
+              <path d="M8 6.1v2.4l1.65 1" />
+              <path d="M3 4.7A6.3 6.3 0 1 1 2.1 9.9" />
+              <path d="M2.1 6.1H5v2.9" />
+            </svg>
           </span>
           <h3>Decision Ancestry</h3>
         </div>
-        <span className="ancestry-memory-kicker">Memory Retrieval</span>
       </header>
 
       <section className="ancestry-memory-meta" aria-label="Memory retrieval metadata">

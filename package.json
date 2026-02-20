@@ -23,6 +23,8 @@
     "db:reset": "tsx scripts/seed_postgres.ts --reset --truncate-only"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
     "dotenv": "^17.3.1",
     "next": "^15.1.0",
     "openai": "^4.77.3",
@@ -30,6 +32,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.5.0",
+    "three": "^0.183.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

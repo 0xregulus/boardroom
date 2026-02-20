@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import dynamic from "next/dynamic";
 
 import type { DecisionStrategy, NodeStatus, WorkflowNode, WorkflowTask } from "../types";
 
@@ -93,21 +94,21 @@ function outcomeForAgent(status: NodeStatus, title: string, disabled = false): A
   return { label: "Queued", tone: "idle" };
 }
 
-function polygonPoints(values: number[], cx: number, cy: number, maxRadius: number): string {
-  if (values.length === 0) {
-    return "";
+function influenceFromAgent(agent: OrbitAgentView | undefined): number {
+  if (!agent || agent.outcome.label === "Disabled") {
+    return 0;
   }
 
-  const angleStep = (Math.PI * 2) / values.length;
-  return values
-    .map((value, index) => {
-      const angle = -Math.PI / 2 + index * angleStep;
-      const radius = maxRadius * clamp01(value);
-      const x = cx + Math.cos(angle) * radius;
-      const y = cy + Math.sin(angle) * radius;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
+  if (agent.outcome.tone === "blocked") {
+    return 0.95;
+  }
+  if (agent.outcome.tone === "challenged") {
+    return 0.9;
+  }
+  if (agent.status === "RUNNING") {
+    return 0.2;
+  }
+  return 0;
 }
 
 function splitLogLine(line: string): { timestamp: string | null; message: string } {
@@ -137,7 +138,16 @@ const REVIEWER_SPECS: ReadonlyArray<{ title: string; subtitle: string; requiresR
   { title: "Resource Competitor", subtitle: "Competing allocation pressure", requiresRedTeam: true },
 ];
 
-const REBUTTAL_ROUND_OPTIONS: readonly number[] = [0, 1, 2, 3];
+const REBUTTAL_ROUND_OPTIONS: readonly number[] = [1, 2, 3, 4, 5];
+const REFINEMENT_RING_LEVELS: readonly number[] = [1, 2, 3, 4, 5];
+const ORBIT_CENTER_X = 450;
+const ORBIT_CENTER_Y = 300;
+const ORBIT_CENTER_LEFT = "50%";
+const ORBIT_CENTER_TOP = "64%";
+const DecisionPulse3D = dynamic(
+  () => import("./DecisionPulse3D").then((module) => module.DecisionPulse3D),
+  { ssr: false },
+);
 
 export function WorkflowEditorStage({
   includeExternalResearch,
@@ -210,9 +220,9 @@ export function WorkflowEditorStage({
       return [];
     }
 
-    const centerX = 450;
-    const centerY = 300;
-    const radius = 210;
+    const centerX = ORBIT_CENTER_X;
+    const centerY = ORBIT_CENTER_Y;
+    const radius = 266;
     const slotCount = renderedReviewers.length;
     const angleStep = (Math.PI * 2) / slotCount;
 
@@ -230,7 +240,7 @@ export function WorkflowEditorStage({
             : outcome.tone === "blocked"
               ? 14
               : 0;
-      const dynamicRadius = Math.max(154, radius - pullStrength);
+      const dynamicRadius = Math.max(208, radius - pullStrength);
       const x = centerX + Math.cos(angle) * dynamicRadius;
       const y = centerY + Math.sin(angle) * dynamicRadius;
 
@@ -281,25 +291,22 @@ export function WorkflowEditorStage({
     };
   }, [orbitAgents, stageSteps]);
 
-  const pulseVertices = useMemo(() => {
-    const points = 24;
-    const substanceFactor = executionSnapshot.substance / 100;
-    const hygieneFactor = executionSnapshot.hygiene / 100;
-    const challengedWeight = orbitAgents.filter((agent) => agent.outcome.tone === "challenged").length / Math.max(1, orbitAgents.length);
-    const blockedWeight = orbitAgents.filter((agent) => agent.outcome.tone === "blocked").length / Math.max(1, orbitAgents.length);
-    const runningWeight = orbitAgents.filter((agent) => agent.status === "RUNNING").length / Math.max(1, orbitAgents.length);
-    const stability = 1 - Math.abs(executionSnapshot.substance - executionSnapshot.hygiene) / 100;
-    const stress = challengedWeight * 0.7 + blockedWeight * 1.15 + runningWeight * 0.35;
-    const jaggedness = (1 - stability) * 0.16 + stress * 0.12;
-    const equilibrium = clamp01((substanceFactor + hygieneFactor) / 2);
+  const pulseDqs = useMemo(
+    () => Number((executionSnapshot.substance * 0.75 + executionSnapshot.hygiene * 0.25).toFixed(1)),
+    [executionSnapshot.hygiene, executionSnapshot.substance],
+  );
 
-    return Array.from({ length: points }, (_, index) => {
-      const lowFreq = Math.sin(index * 0.72 + substanceFactor * Math.PI * 1.3) * (0.06 + jaggedness * 0.3);
-      const hiFreq = Math.cos(index * 2.25 + hygieneFactor * Math.PI * 1.8) * (0.04 + jaggedness * 0.52);
-      const asymmetry = Math.sin(index * 1.17 + stress * Math.PI * 2) * (0.03 + (1 - stability) * 0.08);
-      return clamp01(0.5 + equilibrium * 0.32 + lowFreq + hiFreq + asymmetry - stress * 0.09);
-    });
-  }, [executionSnapshot.hygiene, executionSnapshot.substance, orbitAgents]);
+  const pulseAgentInfluence = useMemo(() => {
+    const index = new Map(orbitAgents.map((agent) => [normalizeKey(agent.title), agent] as const));
+    return [
+      influenceFromAgent(index.get("ceo")),
+      influenceFromAgent(index.get("cfo")),
+      influenceFromAgent(index.get("cto")),
+      influenceFromAgent(index.get("compliance")),
+      influenceFromAgent(index.get("pre-mortem")),
+      influenceFromAgent(index.get("resource-competitor")),
+    ];
+  }, [orbitAgents]);
 
   const parsedLogLines = useMemo(() => logLines.map(splitLogLine), [logLines]);
 
@@ -389,10 +396,7 @@ export function WorkflowEditorStage({
                     Research
                   </span>
                 ) : null}
-                <div className="canvas-hygiene-score" aria-label={`Hygiene score ${executionSnapshot.hygiene}`}>
-                  <span>Hygiene score</span>
-                  <strong>{executionSnapshot.hygiene}</strong>
-                </div>
+
               </div>
 
               <section className="pulse-visual-grid">
@@ -400,15 +404,26 @@ export function WorkflowEditorStage({
                   <header>
                     <div className="decision-pulse-header-copy">
                       <h2>Decision Pulse</h2>
-                      <p className="pulse-metrics">
-                        Substance
-                        {" "}
-                        <strong>{executionSnapshot.substance}</strong>
-                        {" · "}
-                        Hygiene
-                        {" "}
-                        <strong>{executionSnapshot.hygiene}</strong>
-                      </p>
+                      <div className="pulse-metric-gauges" role="group" aria-label="Substance and Hygiene gauges">
+                        <div className="pulse-metric-row">
+                          <div className="pulse-metric-label">
+                            <span>Substance</span>
+                            <strong>{executionSnapshot.substance}</strong>
+                          </div>
+                          <div className="pulse-metric-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={executionSnapshot.substance}>
+                            <span className="pulse-metric-fill substance" style={{ width: `${executionSnapshot.substance}%` }} />
+                          </div>
+                        </div>
+                        <div className="pulse-metric-row">
+                          <div className="pulse-metric-label">
+                            <span>Hygiene</span>
+                            <strong>{executionSnapshot.hygiene}</strong>
+                          </div>
+                          <div className="pulse-metric-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={executionSnapshot.hygiene}>
+                            <span className="pulse-metric-fill hygiene" style={{ width: `${executionSnapshot.hygiene}%` }} />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <strong className={`pulse-state state-${pulseStateClass}`}>{executionSnapshot.state}</strong>
                   </header>
@@ -423,35 +438,45 @@ export function WorkflowEditorStage({
                           <stop offset="100%" stopColor="#fb923c" stopOpacity="0.65" />
                         </radialGradient>
                       </defs>
-                      {[1, 2, 3].map((round) => (
+                      {REFINEMENT_RING_LEVELS.map((round) => (
                         <circle
                           key={`ring-${round}`}
-                          cx="450"
-                          cy="300"
-                          r={94 + round * 34}
+                          cx={ORBIT_CENTER_X}
+                          cy={ORBIT_CENTER_Y}
+                          r={108 + round * 28}
                           className={`refinement-ring${interactionRounds >= round ? " active" : ""}`}
                           style={interactionRounds >= round ? { animationDelay: `${round * 220}ms` } : undefined}
                         />
                       ))}
-                      <circle cx="450" cy="300" r="212" className="pulse-orbit-ring" />
-                      <polygon points={polygonPoints(pulseVertices, 450, 300, 136)} className="pulse-core-shape" />
-                      {[1, 2, 3].map((round) => (
+                      <circle cx={ORBIT_CENTER_X} cy={ORBIT_CENTER_Y} r="236" className="pulse-orbit-ring" />
+                      {orbitAgents.map((agent) => (
+                        <line
+                          key={`link-${agent.id}`}
+                          x1={ORBIT_CENTER_X}
+                          y1={ORBIT_CENTER_Y}
+                          x2={agent.x}
+                          y2={agent.y}
+                          className={`pulse-agent-link tone-${agent.outcome.tone}${agent.status === "RUNNING" ? " active" : ""}`}
+                        />
+                      ))}
+                      {REFINEMENT_RING_LEVELS.map((round) => (
                         <text
                           key={`ring-label-${round}`}
-                          x={450 + 94 + round * 34 + 8}
-                          y={300 - 4}
+                          x={ORBIT_CENTER_X + 108 + round * 28 + 8}
+                          y={ORBIT_CENTER_Y - 4}
                           className={`refinement-ring-label${interactionRounds >= round ? " active" : ""}`}
                         >
                           R{round}
                         </text>
                       ))}
-                      {orbitAgents.map((agent, index) => {
-                        const angle = -Math.PI / 2 + index * ((Math.PI * 2) / Math.max(1, orbitAgents.length));
-                        const dotX = 450 + Math.cos(angle) * 212;
-                        const dotY = 300 + Math.sin(angle) * 212;
-                        return <circle key={`dot-${agent.id}`} cx={dotX} cy={dotY} r="4.5" className="pulse-orbit-dot" />;
-                      })}
+                      {orbitAgents.map((agent) => (
+                        <circle key={`dot-${agent.id}`} cx={agent.x} cy={agent.y} r="4.5" className="pulse-orbit-dot" />
+                      ))}
                     </svg>
+
+                    <div className="pulse-core-three-wrapper" style={{ left: ORBIT_CENTER_LEFT, top: ORBIT_CENTER_TOP }}>
+                      <DecisionPulse3D dqs={pulseDqs} agentInfluence={pulseAgentInfluence} />
+                    </div>
 
                     {orbitAgents.map((agent) => (
                       <button
@@ -490,7 +515,7 @@ export function WorkflowEditorStage({
             <div className="panel-body boardroom-pulse-aside-body">
               <label className="workflow-control-toggle" htmlFor="editor-enable-research">
                 <div>
-                  <strong>Enable Tavily Research</strong>
+                  <strong>Enable Research</strong>
                   <p>Use external web research during executive reviews.</p>
                 </div>
                 <span className={`pipeline-switch${!tavilyConfigured ? " disabled" : ""}`}>
