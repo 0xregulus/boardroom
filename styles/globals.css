@@ -227,8 +227,8 @@ textarea {
 }
 
 .pipeline-switch input:focus-visible+.pipeline-switch-track {
-  outline: 2px solid var(--indigo-500);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--indigo-500);
 }
 
 .boardroom-execute {
@@ -573,6 +573,9 @@ textarea {
   width: 60px;
   height: 36px;
   display: inline-flex;
+  flex: 0 0 60px;
+  min-width: 60px;
+  min-height: 36px;
 }
 
 .pipeline-switch input {
@@ -587,12 +590,15 @@ textarea {
 }
 
 .pipeline-switch-track {
+  --switch-knob-size: 28px;
+  --switch-knob-gap: 3px;
   width: 100%;
   height: 100%;
   border-radius: 999px;
   border: 1px solid #d5dbe6;
   background: #d2d9e4;
   position: relative;
+  overflow: hidden;
   pointer-events: none;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
@@ -600,14 +606,14 @@ textarea {
 .pipeline-switch-track::after {
   content: "";
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 28px;
-  height: 28px;
+  top: var(--switch-knob-gap);
+  left: var(--switch-knob-gap);
+  width: var(--switch-knob-size);
+  height: var(--switch-knob-size);
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
-  transition: transform 0.15s ease;
+  transition: left 0.15s ease;
 }
 
 .pipeline-switch input:checked+.pipeline-switch-track {
@@ -616,7 +622,7 @@ textarea {
 }
 
 .pipeline-switch input:checked+.pipeline-switch-track::after {
-  transform: translateX(24px);
+  left: calc(100% - var(--switch-knob-size) - var(--switch-knob-gap));
 }
 
 .pipeline-switch.disabled input {
@@ -1229,8 +1235,8 @@ textarea {
 
 .refinement-ring.active {
   stroke: #818cf8;
-  stroke-width: 1.7;
-  opacity: 0.8;
+  stroke-width: 2.7;
+  opacity: 1;
   animation: refinement-ring-ripple 3.4s ease-in-out infinite;
 }
 
@@ -1250,10 +1256,11 @@ textarea {
 
 .pulse-core-three-wrapper {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 332px;
-  height: 332px;
+  left: 50% !important;
+  top: 50% !important;
+  width: 372px;
+  height: 372px;
+  aspect-ratio: 1 / 1;
   transform: translate(-50%, -50%);
   z-index: 3;
   pointer-events: none;
@@ -1269,8 +1276,6 @@ textarea {
 }
 
 .pulse-core-three-shell canvas {
-  width: 100% !important;
-  height: 100% !important;
   display: block;
 }
 
@@ -1301,6 +1306,11 @@ textarea {
   gap: 5px;
   cursor: pointer;
   isolation: isolate;
+  transition:
+    left 0.35s ease,
+    top 0.35s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .orbit-agent::before {
@@ -1427,6 +1437,8 @@ textarea {
 .boardroom-pulse-aside-body {
   display: grid;
   gap: 10px;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .workflow-control-card {
@@ -1615,10 +1627,6 @@ textarea {
   color: #475569;
   font-size: 11px;
   line-height: 1.4;
-}
-
-.boardroom-pulse-footer-log {
-  height: 148px;
 }
 
 .strategy-sidebar {
@@ -4491,12 +4499,17 @@ textarea {
 }
 
 .panel-logs {
-  height: 50%;
   border-top: 1px solid #172554;
   background: #0b1736;
   color: #94a3b8;
   display: flex;
   flex-direction: column;
+}
+
+.panel-logs.boardroom-pulse-footer-log {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .log-header {

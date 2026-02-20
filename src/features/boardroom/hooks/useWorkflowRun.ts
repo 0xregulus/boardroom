@@ -4,6 +4,7 @@ import type { AgentConfig } from "../../../config/agent_config";
 import type { ResearchProvider } from "../../../research/providers";
 import type { AppStage, ApiResult, DecisionStrategy, NodeStatus, WorkflowNode, WorkflowTask } from "../types";
 import { buildInitialNodes, buildInteractionTasks, buildReviewTasks, sleep } from "../utils";
+import { useWorkflowStream, type WorkflowStreamPayload, type WorkflowStreamTraceEvent } from "./useWorkflowStream";
 
 interface UseWorkflowRunParams {
   appStage: AppStage;
@@ -30,6 +31,8 @@ interface UseWorkflowRunResult {
   result: ApiResult | null;
   logLines: string[];
   runLabel: string;
+  liveInfluence: number[];
+  thinkingAgents: boolean[];
   setDecisionId: (value: string) => void;
   setIncludeExternalResearch: (value: boolean) => void;
   setIncludeRedTeamPersonas: (value: boolean) => void;
@@ -64,15 +67,24 @@ export function useWorkflowRun({
   const [result, setResult] = useState<ApiResult | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
 
+  const {
+    liveInfluence,
+    thinkingAgents,
+    isRunning: isStreamRunning,
+    error: streamError,
+    result: streamResult,
+    runWorkflow,
+  } = useWorkflowStream();
+
   const reviewNode = useMemo(() => nodes.find((node) => node.id === "3") ?? null, [nodes]);
   const interactionNode = useMemo(() => nodes.find((node) => node.id === "4") ?? null, [nodes]);
 
   const runLabel = useMemo(() => {
-    if (isRunning) {
+    if (isRunning || isStreamRunning) {
       return "Running Pipeline...";
     }
     return "Execute Pipeline";
-  }, [isRunning]);
+  }, [isRunning, isStreamRunning]);
 
   const effectiveReviewRoleLabels = useMemo(() => {
     const labels = reviewRoleLabels
@@ -173,18 +185,23 @@ export function useWorkflowRun({
   }, [effectiveReviewRoleLabels, effectiveReviewSummary]);
 
   useEffect(() => {
-    if (!isRunning || !reviewNode || reviewNode.status !== "RUNNING" || (reviewNode.tasks?.length ?? 0) <= 1) {
+    if ((!isRunning && !isStreamRunning) || !reviewNode || (reviewNode.status !== "RUNNING" && reviewNode.status !== "IDLE") || (reviewNode.tasks?.length ?? 0) <= 1) {
       return;
     }
-    setExpandedNodeId("3");
-  }, [isRunning, reviewNode]);
+    // Only auto-expand if we are actually in review phase
+    if (reviewNode.status === "RUNNING") {
+      setExpandedNodeId("3");
+    }
+  }, [isRunning, isStreamRunning, reviewNode]);
 
   useEffect(() => {
-    if (!isRunning || !interactionNode || interactionNode.status !== "RUNNING" || (interactionNode.tasks?.length ?? 0) <= 1) {
+    if ((!isRunning && !isStreamRunning) || !interactionNode || (interactionNode.status !== "RUNNING" && interactionNode.status !== "IDLE") || (interactionNode.tasks?.length ?? 0) <= 1) {
       return;
     }
-    setExpandedNodeId("4");
-  }, [isRunning, interactionNode]);
+    if (interactionNode.status === "RUNNING") {
+      setExpandedNodeId("4");
+    }
+  }, [isRunning, isStreamRunning, interactionNode]);
 
   function addLog(message: string): void {
     const timestamp = new Date().toLocaleTimeString([], { hour12: false });
@@ -199,19 +216,6 @@ export function useWorkflowRun({
     setNodes((prev) =>
       prev.map((node) =>
         node.id === "3"
-          ? {
-            ...node,
-            tasks: (node.tasks ?? []).map(updater),
-          }
-          : node,
-      ),
-    );
-  }
-
-  function updateInteractionTasks(updater: (task: WorkflowTask) => WorkflowTask): void {
-    setNodes((prev) =>
-      prev.map((node) =>
-        node.id === "4"
           ? {
             ...node,
             tasks: (node.tasks ?? []).map(updater),
@@ -259,82 +263,8 @@ export function useWorkflowRun({
     updateNodeStatus(nodeId, "COMPLETED");
   }
 
-  async function runParallelReviewStep(message: string): Promise<void> {
-    const reviewTasks = buildReviewTasks(effectiveReviewRoleLabels);
-
-    updateNodeStatus("3", "RUNNING");
-    setExpandedNodeId("3");
-    addLog(message);
-    setNodes((prev) =>
-      prev.map((node) =>
-        node.id === "3"
-          ? {
-            ...node,
-            subtitle: effectiveReviewSummary,
-            tasks: reviewTasks.map((task) => ({ ...task, status: "RUNNING" })),
-          }
-          : node,
-      ),
-    );
-
-    if (reviewTasks.length === 0) {
-      await sleep(250);
-      updateNodeStatus("3", "COMPLETED");
-      return;
-    }
-
-    await Promise.all(
-      reviewTasks.map(async (task) => {
-        const latencyMs = 420 + Math.floor(Math.random() * 980);
-        await sleep(latencyMs);
-        updateReviewTasks((candidate) =>
-          candidate.id === task.id ? { ...candidate, status: "COMPLETED" } : candidate,
-        );
-        addLog(`${task.title} review completed (${latencyMs}ms)`);
-      }),
-    );
-
-    updateNodeStatus("3", "COMPLETED");
-  }
-
-  async function runInteractionRoundStep(): Promise<void> {
-    const interactionTasks = buildInteractionTasks(interactionRounds);
-    updateNodeStatus("4", "RUNNING");
-
-    if (interactionTasks.length === 0) {
-      addLog("Skipping cross-agent rebuttal rounds (disabled)");
-      await sleep(250);
-      updateNodeStatus("4", "COMPLETED");
-      return;
-    }
-
-    setNodes((prev) =>
-      prev.map((node) =>
-        node.id === "4"
-          ? {
-            ...node,
-            subtitle: `${interactionTasks.length} rebuttal round${interactionTasks.length === 1 ? "" : "s"}`,
-            tasks: interactionTasks.map((task) => ({ ...task, status: "RUNNING" })),
-          }
-          : node,
-      ),
-    );
-    addLog(`Running ${interactionTasks.length} cross-agent rebuttal round${interactionTasks.length === 1 ? "" : "s"}`);
-
-    for (const task of interactionTasks) {
-      const latencyMs = 320 + Math.floor(Math.random() * 620);
-      await sleep(latencyMs);
-      updateInteractionTasks((candidate) =>
-        candidate.id === task.id ? { ...candidate, status: "COMPLETED" } : candidate,
-      );
-      addLog(`${task.title} rebuttal completed (${latencyMs}ms)`);
-    }
-
-    updateNodeStatus("4", "COMPLETED");
-  }
-
   async function handleRun(): Promise<void> {
-    if (isRunning || appStage !== "workspace") {
+    if (isRunning || isStreamRunning || appStage !== "workspace") {
       return;
     }
 
@@ -348,15 +278,7 @@ export function useWorkflowRun({
 
     const selectedDecisionId = decisionId.trim().length > 0 ? decisionId.trim() : selectedStrategy?.id ?? "";
     const externalResearchEnabledForRun = researchProviderConfigured && includeExternalResearch;
-    const payload: {
-      decisionId?: string;
-      agentConfigs: AgentConfig[];
-      includeExternalResearch: boolean;
-      researchProvider: ResearchProvider;
-      includeRedTeamPersonas: boolean;
-      includeSensitive: boolean;
-      interactionRounds: number;
-    } = {
+    const payload: WorkflowStreamPayload = {
       agentConfigs,
       includeExternalResearch: externalResearchEnabledForRun,
       researchProvider,
@@ -373,7 +295,51 @@ export function useWorkflowRun({
         ? `Strategy selected: ${selectedStrategy.name} (${selectedDecisionId})`
         : selectedDecisionId.length > 0
           ? `Decision selected: ${selectedDecisionId}`
-          : "No decision ID provided, running all Proposed decisions";
+        : "No decision ID provided, running all Proposed decisions";
+
+    const handleExecutionTrace = (entry: WorkflowStreamTraceEvent): void => {
+      const normalizedMessage = entry.message.trim();
+      if (normalizedMessage.length === 0) {
+        return;
+      }
+
+      const agentPrefix = entry.agentId ? `${entry.agentId}: ` : "";
+      addLog(`${entry.tag} ${agentPrefix}${normalizedMessage}`);
+    };
+
+    const normalizeTaskKey = (value: string): string =>
+      value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+
+    const reviewTaskIds = buildReviewTasks(effectiveReviewRoleLabels).map((task) => task.id);
+    const reviewTaskCount = Math.max(1, reviewTaskIds.length);
+    const completedFirstPass = new Set<string>();
+    let rebuttalStarted = false;
+    let rebuttalAgentCompletions = 0;
+    const runtimeAliases: Record<string, string[]> = {
+      "risk-simulation": ["risk-agent"],
+      "devils-advocate": ["devil-s-advocate"],
+    };
+
+    const resolveTaskIdsFromStream = (agentId: string | undefined, streamIndex: number): string[] => {
+      const candidates = new Set<string>();
+      if (typeof streamIndex === "number" && reviewTaskIds[streamIndex]) {
+        candidates.add(reviewTaskIds[streamIndex]);
+      }
+      if (agentId) {
+        const normalized = normalizeTaskKey(agentId);
+        if (normalized.length > 0) {
+          candidates.add(normalized);
+          for (const alias of runtimeAliases[normalized] ?? []) {
+            candidates.add(alias);
+          }
+        }
+      }
+      return [...candidates];
+    };
 
     try {
       await runStep(
@@ -381,32 +347,85 @@ export function useWorkflowRun({
         `${inputSummary} | External research: ${externalResearchEnabledForRun ? `${researchProvider}` : "Off"} | Red team: ${includeRedTeamPersonas ? "On" : "Off"} | Rebuttal rounds: ${interactionRounds}`,
         350,
       );
-      await runStep("2", "Drafting strategic decision document", 450);
-      await runParallelReviewStep("Running parallel executive reviews");
-      await runInteractionRoundStep();
-      await runStep("5", "Synthesizing reviews and computing DQS", 500);
-      await runStep("6", "Generating PRD package", 500);
 
-      updateNodeStatus("7", "RUNNING");
-      addLog("Syncing artifacts to Strategic Decision Log");
+      // Update UI nodes to show progress while we stream
+      updateNodeStatus("2", "RUNNING");
+      addLog("Drafting strategic decision document");
 
-      const response = await fetch("/api/workflow/run", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      // Start the actual streaming workflow
+      const streamPromise = runWorkflow(payload, {
+        onTrace: handleExecutionTrace,
+        onAgentThinking: ({ index, agentId }) => {
+          const targetIds = resolveTaskIdsFromStream(agentId, index);
+          if (targetIds.length === 0) {
+            return;
+          }
+          updateReviewTasks((task) =>
+            targetIds.includes(normalizeTaskKey(task.id)) || targetIds.includes(normalizeTaskKey(task.title))
+              ? { ...task, status: "RUNNING" }
+              : task,
+          );
         },
-        body: JSON.stringify(payload),
-      });
-      const json = (await response.json()) as ApiResult & { error?: string; details?: string };
+        onAgentResult: ({ index, agentId }) => {
+          const targetIds = resolveTaskIdsFromStream(agentId, index);
+          if (targetIds.length === 0) {
+            return;
+          }
 
-      if (!response.ok) {
-        throw new Error(json.details || json.error || "Workflow run failed.");
+          updateReviewTasks((task) =>
+            targetIds.includes(normalizeTaskKey(task.id)) || targetIds.includes(normalizeTaskKey(task.title))
+              ? { ...task, status: "COMPLETED" }
+              : task,
+          );
+
+          const firstMatch = targetIds[0];
+          if (!rebuttalStarted && firstMatch) {
+            completedFirstPass.add(firstMatch);
+            if (completedFirstPass.size >= reviewTaskCount && interactionRounds > 0) {
+              rebuttalStarted = true;
+              updateNodeStatus("3", "COMPLETED");
+              updateNodeStatus("4", "RUNNING");
+              setExpandedNodeId("4");
+              addLog(`Running ${interactionRounds} cross-agent rebuttal round${interactionRounds === 1 ? "" : "s"}`);
+            }
+          } else if (rebuttalStarted) {
+            rebuttalAgentCompletions += 1;
+            const round = Math.min(interactionRounds, Math.max(1, Math.ceil(rebuttalAgentCompletions / reviewTaskCount)));
+            addLog(`Round ${round} rebuttal in progress`);
+          }
+        },
+      });
+
+      // We still simulate some UI transitions for the high-level steps since the SSE 
+      // primarily reports on individual agents in 3 and 4.
+      await sleep(1200);
+      updateNodeStatus("2", "COMPLETED");
+
+      updateNodeStatus("3", "RUNNING");
+      addLog("Running parallel executive reviews");
+      setExpandedNodeId("3");
+
+      // Monitor stream results to decide when to finish steps
+      // Note: In a production app, we'd use the SSE events to toggle these statuses.
+      // For now, we wait for the stream to provide the final result.
+      await streamPromise;
+
+      // Post-process statuses after stream ends
+      updateNodeStatus("3", "COMPLETED");
+      updateNodeStatus("4", "COMPLETED");
+      updateNodeStatus("5", "COMPLETED");
+      updateNodeStatus("6", "COMPLETED");
+      updateNodeStatus("7", "COMPLETED");
+
+      if (streamError) {
+        throw new Error(streamError);
       }
 
-      setResult(json);
-      updateNodeStatus("7", "COMPLETED");
-      addLog("Pipeline execution complete");
-      onRunSuccess(selectedDecisionId.length > 0 ? selectedDecisionId : null);
+      if (streamResult) {
+        setResult(streamResult);
+        addLog("Pipeline execution complete");
+        onRunSuccess(selectedDecisionId.length > 0 ? selectedDecisionId : null);
+      }
     } catch (runError) {
       const message = runError instanceof Error ? runError.message : String(runError);
       setError(message);
@@ -426,11 +445,13 @@ export function useWorkflowRun({
     includeRedTeamPersonas,
     interactionRounds,
     previewIndex,
-    isRunning,
-    error,
-    result,
+    isRunning: isRunning || isStreamRunning,
+    error: error || streamError,
+    result: result || streamResult,
     logLines,
     runLabel,
+    liveInfluence,
+    thinkingAgents,
     setDecisionId,
     setIncludeExternalResearch,
     setIncludeRedTeamPersonas,

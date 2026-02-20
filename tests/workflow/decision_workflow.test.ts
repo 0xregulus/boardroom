@@ -289,6 +289,18 @@ beforeEach(() => {
   workflowMockState.reviewOutputs.compliance.blocked = false;
   workflowMockState.reviewOutputs["Risk Agent"].blocked = false;
   workflowMockState.reviewOutputs["Devil's Advocate"].blocked = false;
+  workflowMockState.reviewOutputs.CEO.blockers = [];
+  workflowMockState.reviewOutputs.CFO.blockers = [];
+  workflowMockState.reviewOutputs.CTO.blockers = [];
+  workflowMockState.reviewOutputs.compliance.blockers = [];
+  workflowMockState.reviewOutputs["Risk Agent"].blockers = [];
+  workflowMockState.reviewOutputs["Devil's Advocate"].blockers = [];
+  workflowMockState.reviewOutputs.CEO.risks = [];
+  workflowMockState.reviewOutputs.CFO.risks = [];
+  workflowMockState.reviewOutputs.CTO.risks = [];
+  workflowMockState.reviewOutputs.compliance.risks = [];
+  workflowMockState.reviewOutputs["Risk Agent"].risks = [];
+  workflowMockState.reviewOutputs["Devil's Advocate"].risks = [];
 
   workflowMockState.synthesis = {
     executive_summary: "Synthesis",
@@ -509,6 +521,27 @@ describe("runDecisionWorkflow", () => {
     const interactionContexts = interactionRoundContexts(allContexts);
     expect(interactionContexts).toHaveLength(8);
     expect(storeMocks.upsertDecisionReview).toHaveBeenCalledTimes(9);
+  });
+
+  it("emits trace events when a provider fails for an agent review", async () => {
+    const onTrace = vi.fn();
+    workflowMockState.reviewOutputs.CFO.blockers = [
+      "CFO LLM call failed: Error: All providers failed. Attempts: OpenAI: 429 rate limit | Anthropic: missing ANTHROPIC_API_KEY",
+    ];
+
+    await runDecisionWorkflow({ decisionId: "d1", onTrace });
+
+    const hasProviderFailureTrace = onTrace.mock.calls.some(([event]) => {
+      const candidate = event as { tag?: string; agentId?: string; message?: string };
+      return (
+        candidate.tag === "WARN" &&
+        candidate.agentId === "cfo" &&
+        typeof candidate.message === "string" &&
+        candidate.message.includes("provider failure")
+      );
+    });
+
+    expect(hasProviderFailureTrace).toBe(true);
   });
 });
 

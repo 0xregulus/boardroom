@@ -1,3 +1,5 @@
+import { isSimulationModeEnabled } from "../simulation/mode";
+
 export type ResearchProvider = "Tavily" | "Jina" | "Perplexity";
 
 interface ResearchProviderSettings {
@@ -57,6 +59,10 @@ export function researchProviderApiKeyEnv(provider: ResearchProvider): string {
 }
 
 export function researchProviderEnabled(provider: ResearchProvider, env: NodeJS.ProcessEnv | undefined = process.env): boolean {
+  if (isSimulationModeEnabled(env)) {
+    return true;
+  }
+
   return envValue(env, researchProviderApiKeyEnv(provider)).length > 0;
 }
 

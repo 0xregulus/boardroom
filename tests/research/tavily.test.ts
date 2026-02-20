@@ -37,6 +37,25 @@ describe("fetchTavilyResearch", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("returns synthetic report without calling network when simulation mode is enabled", async () => {
+    delete process.env.TAVILY_API_KEY;
+    process.env.BOARDROOM_SIMULATION_MODE = "true";
+    process.env.BOARDROOM_SIMULATION_MIN_DELAY_MS = "0";
+    process.env.BOARDROOM_SIMULATION_MAX_DELAY_MS = "0";
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const report = await fetchTavilyResearch({
+      agentName: "CEO",
+      snapshot: {},
+    });
+
+    expect(report).not.toBeNull();
+    expect(report?.items.length).toBeGreaterThan(0);
+    expect(report?.items[0]?.url).toContain("simulation.local");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("maps Tavily results into normalized research items", async () => {
     process.env.TAVILY_API_KEY = "tvly-test-key";
     process.env.TAVILY_ALLOWED_HOSTS = "example.com";

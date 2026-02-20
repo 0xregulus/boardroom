@@ -6,7 +6,9 @@ import { enforceRateLimit, enforceSensitiveRouteAccess } from "../../../src/secu
 import { enforceWorkflowRunPolicy } from "../../../src/security/workflow_policy";
 import { getPersistedAgentConfigs } from "../../../src/store/postgres";
 import { resolveResearchProvider } from "../../../src/research/providers";
+import { isSimulationModeEnabled } from "../../../src/simulation/mode";
 import { runAllProposedDecisions, runDecisionWorkflow } from "../../../src/workflow/decision_workflow";
+import type { WorkflowTraceEvent } from "../../../src/workflow/states";
 
 interface RunBody {
   decisionId?: string;
@@ -168,6 +170,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const agentConfigs = normalizeAgentConfigs(body.agentConfigs ?? persistedAgentConfigs ?? undefined);
 
     if (decisionId && decisionId.length > 0) {
+      if ((req.headers?.accept ?? "").toLowerCase().includes("text/event-stream")) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.socket?.setNoDelay(true);
+        res.flushHeaders?.();
+
+        const sendEvent = (event: string, data: any) => {
+          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          (res as NextApiResponse & { flush?: () => void }).flush?.();
+        };
+        res.write(": stream-open\n\n");
+
+        if (isSimulationModeEnabled()) {
+          sendEvent("execution_trace", {
+            tag: "EXEC",
+            message: "Simulation mode active: external provider calls are mocked with synthetic latency and responses.",
+          } satisfies WorkflowTraceEvent);
+        }
+
+        const state = await runDecisionWorkflow({
+          decisionId,
+          modelName: body.modelName,
+          temperature: body.temperature,
+          maxTokens: body.maxTokens,
+          interactionRounds: body.interactionRounds,
+          includeRedTeamPersonas: body.includeRedTeamPersonas,
+          agentConfigs,
+          includeExternalResearch,
+          researchProvider,
+          onAgentStart: (agentId) => {
+            const index = agentConfigs.findIndex((a) => a.id === agentId);
+            // Runtime may add red-team personas that are not part of persisted configs.
+            // Always emit with agentId so the UI can resolve the matching reviewer task.
+            sendEvent("agent_thinking", { index, agentId, influence: 0.72 });
+          },
+          onAgentFinish: (agentId, score) => {
+            const index = agentConfigs.findIndex((a) => a.id === agentId);
+            // Runtime may add red-team personas that are not part of persisted configs.
+            // Always emit with agentId so the UI can resolve the matching reviewer task.
+            sendEvent("agent_result", { index, agentId, score, influence: Math.max(0, Math.min(1, score / 10)) });
+          },
+          onTrace: (event: WorkflowTraceEvent) => {
+            sendEvent("execution_trace", event);
+          },
+        });
+
+        sendEvent("final_result", {
+          mode: "single",
+          result: includeSensitive ? state : toWorkflowStatePreview(state),
+        });
+        res.end();
+        return;
+      }
+
       const state = await runDecisionWorkflow({
         decisionId,
         modelName: body.modelName,

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 
 import type { ResearchProvider } from "../../../research/providers";
@@ -19,6 +19,8 @@ interface WorkflowEditorStageProps {
   isRunning: boolean;
   runLabel: string;
   error: string | null;
+  liveInfluence: number[];
+  thinkingAgents: boolean[];
   onBack: () => void;
   onRun: () => void;
   onNodeClick: (node: WorkflowNode) => void;
@@ -34,6 +36,7 @@ interface AgentOutcome {
 
 interface OrbitAgentView {
   id: string;
+  orbitIndex: number;
   title: string;
   domain: string;
   subtitle: string;
@@ -43,6 +46,9 @@ interface OrbitAgentView {
   x: number;
   y: number;
   pullStrength: number;
+  roundPhase: number;
+  roundIntensity: number;
+  streamInfluence: number;
 }
 
 function clamp01(value: number): number {
@@ -114,13 +120,13 @@ function influenceFromAgent(agent: OrbitAgentView | undefined): number {
   }
 
   if (agent.outcome.tone === "blocked") {
-    return 0.95;
+    return 1;
   }
   if (agent.outcome.tone === "challenged") {
-    return 0.9;
+    return 0.92;
   }
   if (agent.status === "RUNNING") {
-    return 0.2;
+    return 0.9;
   }
   return 0;
 }
@@ -131,6 +137,51 @@ function splitLogLine(line: string): { timestamp: string | null; message: string
     return { timestamp: null, message: line };
   }
   return { timestamp: match[1], message: match[2] };
+}
+
+function extractTraceTag(message: string): { tag: string | null; message: string } {
+  const explicitMatch = message.match(/^(WARN|ERROR|EXEC)\s+(.+)$/i);
+  if (!explicitMatch) {
+    return { tag: null, message };
+  }
+
+  return {
+    tag: explicitMatch[1]!.toUpperCase(),
+    message: explicitMatch[2]!.trim(),
+  };
+}
+
+function deriveActiveRebuttalRound(logLines: string[], configuredRounds: number, isRunning: boolean): number {
+  if (configuredRounds <= 0) {
+    return 0;
+  }
+
+  let rebuttalStarted = false;
+  let highestCompleted = 0;
+
+  for (const line of logLines) {
+    if (/cross-agent rebuttal/i.test(line)) {
+      rebuttalStarted = true;
+    }
+
+    const completedMatch = line.match(/round\s+(\d+)\s+rebuttal completed/i);
+    if (completedMatch) {
+      const round = Number.parseInt(completedMatch[1] ?? "0", 10);
+      if (Number.isFinite(round)) {
+        highestCompleted = Math.max(highestCompleted, round);
+      }
+    }
+  }
+
+  if (!rebuttalStarted) {
+    return 0;
+  }
+
+  if (isRunning) {
+    return Math.min(configuredRounds, Math.max(1, highestCompleted + 1));
+  }
+
+  return Math.min(configuredRounds, Math.max(1, highestCompleted));
 }
 
 const STAGE_FLOW: ReadonlyArray<{ id: string; title: string; subtitle: string }> = [
@@ -156,12 +207,16 @@ const REVIEWER_SPECS: ReadonlyArray<{ title: string; subtitle: string; requiresR
 
 const REBUTTAL_ROUND_OPTIONS: readonly number[] = [1, 2, 3, 4, 5];
 const REFINEMENT_RING_LEVELS: readonly number[] = [1, 2, 3, 4, 5];
+const PULSE_MAX_AGENTS = 12;
+const ORBIT_VIEWBOX_WIDTH = 900;
+const ORBIT_VIEWBOX_HEIGHT = 620;
 const ORBIT_CENTER_X = 450;
 const ORBIT_CENTER_Y = 300;
+const ORBIT_AGENT_RADIUS = 336;
 const ORBIT_CENTER_LEFT = "50%";
 const ORBIT_CENTER_TOP = "64%";
-const DecisionPulse3D = dynamic(
-  () => import("./DecisionPulse3D").then((module) => module.DecisionPulse3D),
+const DecisionPulse = dynamic(
+  () => import("./DecisionPulse").then((module) => module.DecisionPulse),
   { ssr: false },
 );
 
@@ -176,11 +231,14 @@ export function WorkflowEditorStage({
   selectedNodeId,
   logLines,
   isRunning,
+  liveInfluence,
+  thinkingAgents,
   onNodeClick,
   onIncludeExternalResearchChange,
   onIncludeRedTeamPersonasChange,
   onInteractionRoundsChange,
 }: WorkflowEditorStageProps) {
+  const [orbitMotionTime, setOrbitMotionTime] = useState(0);
   const nodeIndex = useMemo(() => new Map(nodes.map((node) => [node.id, node] as const)), [nodes]);
 
   const stageSteps = useMemo(
@@ -195,6 +253,28 @@ export function WorkflowEditorStage({
         };
       }),
     [nodeIndex],
+  );
+
+  useEffect(() => {
+    if (!isRunning) {
+      setOrbitMotionTime(0);
+      return;
+    }
+
+    let frameId = 0;
+    const start = performance.now();
+    const animate = (now: number) => {
+      setOrbitMotionTime((now - start) / 1000);
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    frameId = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isRunning]);
+
+  const activeRebuttalRound = useMemo(
+    () => deriveActiveRebuttalRound(logLines, interactionRounds, isRunning),
+    [interactionRounds, isRunning, logLines],
   );
 
   const orbitAgents = useMemo<OrbitAgentView[]>(() => {
@@ -239,30 +319,65 @@ export function WorkflowEditorStage({
 
     const centerX = ORBIT_CENTER_X;
     const centerY = ORBIT_CENTER_Y;
-    const radius = 306;
+    const radius = ORBIT_AGENT_RADIUS;
     const slotCount = renderedReviewers.length;
     const angleStep = (Math.PI * 2) / slotCount;
+    const roundProgress = activeRebuttalRound > 0 ? activeRebuttalRound / Math.max(1, interactionRounds) : 0;
+    const executionMomentum = isRunning ? (activeRebuttalRound > 0 ? roundProgress : 0.36) : 0;
+    const syntheticRunnerIndex = isRunning ? Math.floor(orbitMotionTime * 1.45) % Math.max(1, slotCount) : -1;
 
     return renderedReviewers.map((reviewer, index) => {
       const task = taskIndex.get(normalizeKey(reviewer.title));
       const disabled = Boolean(reviewer.requiresRedTeam) && !includeRedTeamPersonas;
-      const status = disabled ? "IDLE" : task?.status ?? "IDLE";
+      const streamInfluence = disabled ? 0 : clamp01(liveInfluence[index] ?? 0);
+      const streamThinking = !disabled && Boolean(thinkingAgents[index]);
+      const fallbackStatus = task?.status ?? "IDLE";
+      const status = disabled
+        ? "IDLE"
+        : streamThinking || (isRunning && streamInfluence > 0.08)
+          ? "RUNNING"
+          : isRunning && syntheticRunnerIndex === index
+            ? "RUNNING"
+          : fallbackStatus;
       const outcome = outcomeForAgent(status, reviewer.title, disabled);
-      const angle = -Math.PI / 2 + index * angleStep;
+      const phase = activeRebuttalRound * 0.9 + orbitMotionTime * 1.35 + index * 0.72;
+      const angularNudge = Math.sin(phase) * (0.014 + executionMomentum * 0.06);
+      const angle = -Math.PI / 2 + index * angleStep + angularNudge;
       const pullStrength =
         status === "RUNNING"
-          ? 34
+          ? 30 + streamInfluence * 42
           : outcome.tone === "challenged"
             ? 20
             : outcome.tone === "blocked"
               ? 14
               : 0;
-      const dynamicRadius = Math.max(246, radius - pullStrength);
+      const roundRadialPulse = Math.cos(phase * 1.12) * (5 + executionMomentum * 14);
+      const rebuttalPull =
+        executionMomentum > 0
+          ? status === "RUNNING"
+            ? 18 + executionMomentum * 20
+            : outcome.tone === "challenged"
+              ? 12 + executionMomentum * 15
+              : outcome.tone === "blocked"
+                ? 10 + executionMomentum * 11
+                : executionMomentum * 6
+          : 0;
+      const streamRadiusPull = streamInfluence * (isRunning ? 34 : 0);
+      const dynamicRadius = Math.max(254, radius - pullStrength - rebuttalPull - streamRadiusPull + roundRadialPulse);
       const x = centerX + Math.cos(angle) * dynamicRadius;
       const y = centerY + Math.sin(angle) * dynamicRadius;
+      const roundIntensity =
+        executionMomentum > 0
+          ? (Math.abs(Math.sin(phase)) * 0.55 + Math.abs(Math.cos(phase * 1.08)) * 0.45) * executionMomentum
+          : 0;
+      const runtimeRoundIntensity = Math.max(
+        roundIntensity,
+        streamThinking ? 0.5 + streamInfluence * 0.5 : streamInfluence * 0.32,
+      );
 
       return {
         id: reviewer.title,
+        orbitIndex: index,
         title: reviewer.title,
         domain: domainForAgent(reviewer.title),
         subtitle: reviewer.subtitle,
@@ -272,9 +387,22 @@ export function WorkflowEditorStage({
         x,
         y,
         pullStrength,
+        roundPhase: phase,
+        roundIntensity: runtimeRoundIntensity,
+        streamInfluence,
       };
     });
-  }, [includeExternalResearch, includeRedTeamPersonas, nodeIndex]);
+  }, [
+    activeRebuttalRound,
+    includeExternalResearch,
+    includeRedTeamPersonas,
+    interactionRounds,
+    isRunning,
+    liveInfluence,
+    nodeIndex,
+    orbitMotionTime,
+    thinkingAgents,
+  ]);
 
   const executionSnapshot = useMemo(() => {
     const total = stageSteps.length;
@@ -313,19 +441,94 @@ export function WorkflowEditorStage({
     [executionSnapshot.hygiene, executionSnapshot.substance],
   );
 
+  const reviewOrbitActive = nodeIndex.get("3")?.status === "RUNNING";
+  const rebuttalOrbitActive = nodeIndex.get("4")?.status === "RUNNING";
+  const liveOrbitExecution = isRunning || reviewOrbitActive || rebuttalOrbitActive;
+
+  const pulseAgentSignals = useMemo(() => {
+    const runningOrbitIndices = orbitAgents
+      .filter((agent) => agent.status === "RUNNING" && agent.outcome.label !== "Disabled")
+      .map((agent) => agent.orbitIndex);
+    const focusedRunningOrbitIndex =
+      runningOrbitIndices.length > 0
+        ? runningOrbitIndices[Math.floor(orbitMotionTime * 1.8) % runningOrbitIndices.length]
+        : -1;
+
+    const normalized = orbitAgents.map((agent) => {
+      const isDisabled = agent.outcome.label === "Disabled";
+      const baseInfluence = influenceFromAgent(agent);
+      const runtimeBaseline =
+        !isDisabled && liveOrbitExecution
+          ? agent.status === "RUNNING"
+            ? rebuttalOrbitActive
+              ? 0.24
+              : 0.18
+            : agent.status === "COMPLETED"
+              ? 0.06
+              : 0.12
+          : 0;
+      const kineticInfluence = liveOrbitExecution && agent.status === "RUNNING"
+        ? (rebuttalOrbitActive ? 0.28 : 0.2) * agent.roundIntensity
+        : 0;
+      const liveKineticFloor = !isDisabled && liveOrbitExecution
+        ? 0.14 + agent.roundIntensity * 0.22
+        : 0;
+      const runningBoost = 0; // Placeholder, adjust if a specific runningBoost logic is needed
+      const dx = (agent.x - ORBIT_CENTER_X) / 306;
+      const dy = (ORBIT_CENTER_Y - agent.y) / 306;
+      const angle = Math.atan2(agent.y - ORBIT_CENTER_Y, agent.x - ORBIT_CENTER_X) + agent.roundPhase * 0.07;
+      const zBias = Math.sin(angle * 2) * 0.2 + agent.roundIntensity * 0.12 + (agent.status === "RUNNING" ? 0.08 : 0);
+      const focusFactor =
+        agent.status === "RUNNING"
+          ? runningOrbitIndices.length <= 1
+            ? 1.35
+            : agent.orbitIndex === focusedRunningOrbitIndex
+              ? 1.7
+              : 0.2
+          : 1;
+
+      // If we have live influence from the stream, use it.
+      // Otherwise fallback to the local calculated logic.
+      const rawInfluence = isRunning && agent.streamInfluence > 0
+        ? Math.max(
+          agent.streamInfluence * focusFactor,
+          (baseInfluence + runtimeBaseline + kineticInfluence + runningBoost) * focusFactor,
+          liveKineticFloor * focusFactor,
+        )
+        : Math.max(
+          0,
+          Math.min(
+            1,
+            Math.max((baseInfluence + runtimeBaseline + kineticInfluence + runningBoost) * focusFactor, liveKineticFloor * focusFactor),
+          ),
+        );
+      const finalInfluence = clamp01(rawInfluence);
+
+      return {
+        influence: finalInfluence,
+        position: [dx * 1.12, dy * 1.12, zBias] as [number, number, number],
+      };
+    });
+
+    normalized.sort((a, b) => b.influence - a.influence);
+    return normalized.slice(0, PULSE_MAX_AGENTS);
+  }, [isRunning, liveOrbitExecution, orbitAgents, orbitMotionTime, rebuttalOrbitActive]);
+
   const pulseAgentInfluence = useMemo(() => {
-    const index = new Map(orbitAgents.map((agent) => [normalizeKey(agent.title), agent] as const));
-    return [
-      influenceFromAgent(index.get("ceo")),
-      influenceFromAgent(index.get("cfo")),
-      influenceFromAgent(index.get("cto")),
-      influenceFromAgent(index.get("compliance")),
-      influenceFromAgent(index.get("pre-mortem")),
-      influenceFromAgent(index.get("resource-competitor")),
-      influenceFromAgent(index.get("risk-agent")),
-      influenceFromAgent(index.get("devil-s-advocate")),
-    ];
-  }, [orbitAgents]);
+    const values = new Array<number>(PULSE_MAX_AGENTS).fill(0);
+    for (let i = 0; i < pulseAgentSignals.length; i += 1) {
+      values[i] = pulseAgentSignals[i].influence;
+    }
+    return values;
+  }, [pulseAgentSignals]);
+
+  const pulseAgentPositions = useMemo(() => {
+    const values = new Array<[number, number, number]>(PULSE_MAX_AGENTS).fill([0, 0, 1]);
+    for (let i = 0; i < pulseAgentSignals.length; i += 1) {
+      values[i] = pulseAgentSignals[i].position;
+    }
+    return values;
+  }, [pulseAgentSignals]);
 
   const parsedLogLines = useMemo(() => logLines.map(splitLogLine), [logLines]);
 
@@ -336,18 +539,22 @@ export function WorkflowEditorStage({
 
     return parsedLogLines.slice(-10).map((entry, index) => {
       const lineNo = String(index + 1).padStart(2, "0");
-      const tag = entry.message.toLowerCase().includes("review")
-        ? "REVIEW"
-        : entry.message.toLowerCase().includes("rebuttal")
-          ? "DEBATE"
-          : entry.message.toLowerCase().includes("synthesis")
-            ? "SYNC"
-            : "EXEC";
+      const explicitTrace = extractTraceTag(entry.message);
+      const normalizedMessage = explicitTrace.message;
+      const tag = explicitTrace.tag
+        ? explicitTrace.tag
+        : normalizedMessage.toLowerCase().includes("review")
+          ? "REVIEW"
+          : normalizedMessage.toLowerCase().includes("rebuttal")
+            ? "DEBATE"
+            : normalizedMessage.toLowerCase().includes("synthesis")
+              ? "SYNC"
+              : "EXEC";
       return {
         id: `${lineNo}-${entry.message}`,
         tag,
         timestamp: entry.timestamp ?? "--:--:--",
-        message: entry.message,
+        message: normalizedMessage,
       };
     });
   }, [parsedLogLines]);
@@ -494,7 +701,13 @@ export function WorkflowEditorStage({
                     </svg>
 
                     <div className="pulse-core-three-wrapper" style={{ left: ORBIT_CENTER_LEFT, top: ORBIT_CENTER_TOP }}>
-                      <DecisionPulse3D dqs={pulseDqs} agentInfluence={pulseAgentInfluence} />
+                      <DecisionPulse
+                        dqs={pulseDqs}
+                        agentInfluence={pulseAgentInfluence}
+                        thinkingAgents={thinkingAgents}
+                        agentPositions={pulseAgentPositions}
+                        runtimeActive={isRunning}
+                      />
                     </div>
 
                     {orbitAgents.map((agent) => (
@@ -502,7 +715,10 @@ export function WorkflowEditorStage({
                         key={agent.id}
                         type="button"
                         className={`orbit-agent tone-${agent.outcome.tone}${selectedStep?.id === "3" ? " selected" : ""}`}
-                        style={{ left: `${agent.x}px`, top: `${agent.y}px` }}
+                        style={{
+                          left: `${(agent.x / ORBIT_VIEWBOX_WIDTH) * 100}%`,
+                          top: `${(agent.y / ORBIT_VIEWBOX_HEIGHT) * 100}%`,
+                        }}
                         onClick={() => {
                           const reviewNode = nodeIndex.get("3");
                           if (reviewNode) {

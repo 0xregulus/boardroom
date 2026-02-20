@@ -302,6 +302,52 @@ describe("API /api/workflow/run", () => {
     expect(mock.statusCode).toBe(200);
   });
 
+  it("streams red-team progress events when personas are enabled", async () => {
+    mocks.getPersistedAgentConfigs.mockResolvedValueOnce([{ id: "ceo" }]);
+    mocks.normalizeAgentConfigs.mockReturnValueOnce([{ id: "ceo" }]);
+    mocks.runDecisionWorkflow.mockImplementationOnce(async (options: any) => {
+      options.onAgentStart?.("pre-mortem");
+      options.onAgentFinish?.("pre-mortem", 7);
+      return { decision_id: "d-1" };
+    });
+
+    const req = createMockRequest({
+      method: "POST",
+      headers: {
+        accept: "text/event-stream",
+      },
+      body: {
+        decisionId: "d-1",
+        includeRedTeamPersonas: true,
+      },
+    });
+
+    const writes: string[] = [];
+    const res = {
+      setHeader: vi.fn().mockReturnThis(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+      write: vi.fn((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }),
+      end: vi.fn(),
+      flushHeaders: vi.fn(),
+      socket: {
+        setNoDelay: vi.fn(),
+      },
+    } as any;
+
+    await handler(req, res);
+
+    const output = writes.join("");
+    expect(output).toContain("event: agent_thinking");
+    expect(output).toContain('"agentId":"pre-mortem"');
+    expect(output).toContain("event: agent_result");
+    expect(output).toContain('"score":7');
+    expect(res.end).toHaveBeenCalled();
+  });
+
   it("returns full workflow state when includeSensitive=true", async () => {
     mocks.getPersistedAgentConfigs.mockResolvedValueOnce([{ id: "ceo" }]);
     mocks.normalizeAgentConfigs.mockReturnValueOnce([{ id: "ceo" }]);

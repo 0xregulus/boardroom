@@ -177,6 +177,38 @@ describe("ProviderClientRegistry", () => {
     expect(() => registry.getClient("Mistral")).toThrow("Mistral API key is required");
   });
 
+  it("returns simulated responses when simulation mode is enabled without calling provider APIs", async () => {
+    process.env.BOARDROOM_SIMULATION_MODE = "true";
+    process.env.BOARDROOM_SIMULATION_MIN_DELAY_MS = "0";
+    process.env.BOARDROOM_SIMULATION_MAX_DELAY_MS = "0";
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.MISTRAL_API_KEY;
+    delete process.env.META_API_KEY;
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { ProviderClientRegistry } = await import("../../src/llm/client");
+    const registry = new ProviderClientRegistry();
+    const client = registry.getResilientClient("OpenAI");
+
+    const result = await client.complete({
+      model: "gpt-4o-mini",
+      systemMessage: "system",
+      userMessage: "Return strict JSON with score and governance_checks_met fields.",
+      temperature: 0.2,
+      maxTokens: 500,
+      requireJsonObject: true,
+    });
+
+    const parsed = JSON.parse(result) as { score?: number; governance_checks_met?: Record<string, boolean> };
+    expect(typeof parsed.score).toBe("number");
+    expect(parsed.governance_checks_met).toBeTypeOf("object");
+    expect(mocks.openaiCreate).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("falls back to the next provider when the preferred provider is rate-limited", async () => {
     mocks.openaiCreate.mockRejectedValueOnce(new Error("OpenAI completion failed: rate limit"));
 
@@ -207,6 +239,37 @@ describe("ProviderClientRegistry", () => {
 
     const fallbackPayload = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { model: string };
     expect(fallbackPayload.model).toBe("claude-3-5-sonnet-latest");
+  });
+
+  it("retries preferred provider after rate-limit wait when no alternatives are configured", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.MISTRAL_API_KEY;
+    delete process.env.META_API_KEY;
+
+    mocks.openaiCreate
+      .mockRejectedValueOnce(
+        new Error(
+          "429 Rate limit reached for gpt-4o. Please try again in 0s. Visit https://platform.openai.com/account/rate-limits to learn more.",
+        ),
+      )
+      .mockResolvedValueOnce({
+        choices: [{ message: { content: "{\"ok\":true}" } }],
+      });
+
+    const { ProviderClientRegistry } = await import("../../src/llm/client");
+    const registry = new ProviderClientRegistry();
+    const client = registry.getResilientClient("OpenAI");
+
+    const result = await client.complete({
+      model: "gpt-4o-mini",
+      systemMessage: "system",
+      userMessage: "user",
+      temperature: 0.2,
+      maxTokens: 400,
+    });
+
+    expect(result).toBe("{\"ok\":true}");
+    expect(mocks.openaiCreate).toHaveBeenCalledTimes(2);
   });
 
   it("skips providers in cooldown for subsequent resilient calls", async () => {

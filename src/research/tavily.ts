@@ -1,4 +1,6 @@
 import { sanitizeForExternalUse } from "../security/redaction";
+import { isSimulationModeEnabled } from "../simulation/mode";
+import { buildSimulatedResearchReport } from "./simulation";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const DEFAULT_MAX_RESULTS = 4;
@@ -352,6 +354,13 @@ export function tavilyEnabled(): boolean {
 }
 
 export async function fetchTavilyResearch(input: TavilyResearchInput): Promise<TavilyResearchReport | null> {
+  if (isSimulationModeEnabled()) {
+    return buildSimulatedResearchReport("Tavily", {
+      ...input,
+      snapshot: sanitizeForExternalUse(input.snapshot) as Record<string, unknown>,
+    });
+  }
+
   const apiKey = tavilyApiKey();
   if (apiKey.length === 0 || typeof fetch !== "function") {
     return null;

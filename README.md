@@ -77,6 +77,17 @@ Full guide: [docs/non-technical-local-run.md](docs/non-technical-local-run.md)
 3. Start the app with `npm run dev`.
 4. Run the workflow from the web UI (`/`) or via `POST /api/workflow/run`.
 
+## Local Simulation Mode
+Use this for UX testing without consuming model/research API quotas.
+
+- Start in simulation mode: `npm run dev --simulation`
+- Alternative (npm arg forwarding): `npm run dev -- --simulation`
+- Optional latency tuning:
+  - `BOARDROOM_SIMULATION_MIN_DELAY_MS` (default `280`)
+  - `BOARDROOM_SIMULATION_MAX_DELAY_MS` (default `1100`)
+
+When simulation mode is active, external AI/research calls are intercepted and replaced with deterministic synthetic responses plus realistic delays.
+
 ## Strategic Decision Artifact Creation
 A workflow input artifact is persisted in PostgreSQL and consists of:
 - `decisions`: decision metadata (`id`, `name`, `status`, and supporting fields).

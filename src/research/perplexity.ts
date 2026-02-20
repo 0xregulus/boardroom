@@ -13,6 +13,8 @@ import {
   type ResearchItem,
   type ResearchReport,
 } from "./common";
+import { buildSimulatedResearchReport } from "./simulation";
+import { isSimulationModeEnabled } from "../simulation/mode";
 
 const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
 const DEFAULT_MAX_RESULTS = 4;
@@ -97,6 +99,13 @@ function itemFromSearchResult(entry: PerplexitySearchResult, allowedHosts: Set<s
 }
 
 export async function fetchPerplexityResearch(input: ResearchInput): Promise<ResearchReport | null> {
+  if (isSimulationModeEnabled()) {
+    return buildSimulatedResearchReport("Perplexity", {
+      ...input,
+      snapshot: sanitizeResearchSnapshot(input.snapshot),
+    });
+  }
+
   const apiKey = perplexityApiKey();
   if (apiKey.length === 0 || typeof fetch !== "function") {
     return null;

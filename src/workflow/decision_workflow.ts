@@ -29,6 +29,7 @@ import {
   WorkflowEvidenceVerificationAgentResult,
   WorkflowMarketIntelligenceSignal,
   WorkflowState,
+  WorkflowTraceEvent,
 } from "./states";
 import { fetchResearch } from "../research";
 import {
@@ -209,6 +210,59 @@ function uniqueCitationUrls(review: ReviewOutput): string[] {
 
 function summarizeEvidenceGap(agentName: string, gap: string): string {
   return `[${agentName}] ${gap}`;
+}
+
+function truncateForTrace(value: string, maxLength = 320): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractProviderFailureDetails(review: ReviewOutput): string | null {
+  const candidates = [
+    ...(Array.isArray(review.blockers) ? review.blockers : []),
+    ...(Array.isArray(review.risks) ? review.risks.map((risk) => risk?.evidence ?? "") : []),
+  ]
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+
+  for (const candidate of candidates) {
+    const attemptsMatch = candidate.match(/All providers failed\.\s*Attempts:\s*([\s\S]+)/i);
+    if (attemptsMatch?.[1]) {
+      return truncateForTrace(attemptsMatch[1].trim());
+    }
+
+    if (/provider/i.test(candidate) && /fail|error|rate limit|missing/i.test(candidate)) {
+      return truncateForTrace(candidate);
+    }
+  }
+
+  return null;
+}
+
+function emitProviderFailureTrace(
+  deps: WorkflowDependencies,
+  agentId: string,
+  agentName: string,
+  review: ReviewOutput,
+): void {
+  const details = extractProviderFailureDetails(review);
+  if (!details || !deps.onTrace) {
+    return;
+  }
+
+  const event: WorkflowTraceEvent = {
+    tag: "WARN",
+    agentId,
+    message: `${agentName} provider failure: ${details}`,
+  };
+  deps.onTrace(event);
 }
 
 function verifySingleReviewEvidence(
@@ -574,12 +628,19 @@ async function runExecutiveReviews(state: WorkflowState, deps: WorkflowDependenc
     risk_simulation: state.risk_simulation ?? null,
   };
 
-  const promises = deps.agentConfigs.map(async (config) => {
+  const promises = deps.agentConfigs.map(async (config, index) => {
+    if (index > 0) {
+      await sleep(Math.min(420, 90 * index));
+    }
     const runtime = resolveRuntimeConfig(config, deps);
+    deps.onAgentStart?.(runtime.id);
     const agent = createReviewAgent(runtime, deps);
+    const output = await getAgentReviewOutput(agent, state, state.missing_sections, sharedMemoryContext);
+    deps.onAgentFinish?.(runtime.id, output.score);
+    emitProviderFailureTrace(deps, runtime.id, runtime.name, output);
     return {
       id: runtime.id,
-      output: await getAgentReviewOutput(agent, state, state.missing_sections, sharedMemoryContext),
+      output,
     };
   });
 
@@ -611,13 +672,17 @@ async function runInteractionRounds(state: WorkflowState, deps: WorkflowDependen
 
   for (let round = 1; round <= deps.interactionRounds; round += 1) {
     const previousReviews = updatedReviews;
-    const promises = deps.agentConfigs.map(async (config) => {
+    const promises = deps.agentConfigs.map(async (config, index) => {
       const baseline = previousReviews[config.id];
       if (!baseline) {
         return { id: config.id, output: null as ReviewOutput | null };
       }
 
+      if (index > 0) {
+        await sleep(Math.min(320, 70 * index));
+      }
       const runtime = resolveRuntimeConfig(config, deps);
+      deps.onAgentStart?.(runtime.id);
       const agent = createReviewAgent(runtime, deps);
       const peerReviews = buildPeerReviewContext(previousReviews, config.id);
 
@@ -632,6 +697,8 @@ async function runInteractionRounds(state: WorkflowState, deps: WorkflowDependen
         risk_simulation: state.risk_simulation ?? null,
       });
 
+      deps.onAgentFinish?.(runtime.id, output.score);
+      emitProviderFailureTrace(deps, runtime.id, runtime.name, output);
       return { id: config.id, output };
     });
 

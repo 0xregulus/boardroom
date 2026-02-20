@@ -80,6 +80,12 @@ export interface WorkflowEvidenceVerification {
   by_agent: WorkflowEvidenceVerificationAgentResult[];
 }
 
+export interface WorkflowTraceEvent {
+  tag: "EXEC" | "WARN" | "ERROR";
+  message: string;
+  agentId?: string;
+}
+
 export interface WorkflowState {
   decision_id: string;
   user_context: Record<string, unknown>;
@@ -122,4 +128,7 @@ export interface RunWorkflowOptions {
   researchProvider?: ResearchProvider;
   interactionRounds?: number;
   includeRedTeamPersonas?: boolean;
+  onAgentStart?: (agentId: string) => void;
+  onAgentFinish?: (agentId: string, score: number) => void;
+  onTrace?: (event: WorkflowTraceEvent) => void;
 }

@@ -38,6 +38,9 @@ export interface WorkflowDependencies {
   includeRedTeamPersonas: boolean;
   agentConfigs: AgentConfig[];
   hasCustomAgentConfigs: boolean;
+  onAgentStart?: (agentId: string) => void;
+  onAgentFinish?: (agentId: string, score: number) => void;
+  onTrace?: RunWorkflowOptions["onTrace"];
 }
 
 export interface ResolvedAgentRuntimeConfig extends AgentConfig {
@@ -315,5 +318,8 @@ export function buildDependencies(options?: Partial<RunWorkflowOptions>): Workfl
     includeRedTeamPersonas,
     agentConfigs,
     hasCustomAgentConfigs,
+    onAgentStart: options?.onAgentStart,
+    onAgentFinish: options?.onAgentFinish,
+    onTrace: options?.onTrace,
   };
 }
