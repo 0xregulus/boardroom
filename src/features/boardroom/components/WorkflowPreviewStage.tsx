@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ApiResult, ReportReview, ReportWorkflowState, SnapshotMetrics } from "../types";
 import { formatRunTimestamp } from "../utils";
+import { buildAuditEntries, clampPercent } from "./workflowPreviewStage.helpers";
+import { DecisionPulse2D } from "./DecisionPulse2D";
 
 interface WorkflowPreviewStageProps {
   activeReport: ReportWorkflowState | null;
@@ -21,18 +23,37 @@ interface WorkflowPreviewStageProps {
   onPreviewIndexChange: (index: number) => void;
 }
 
-type AuditEntryType = "PIPELINE_EXEC" | "AGENT_REASONING" | "NEGOTIATION";
+type ConsensusTone = "approved" | "caution" | "blocked" | "mitigated";
 
-interface AuditEntry {
+type IntegrityStatus = "RESOLVED" | "OPEN";
+
+interface ConsensusRow {
   id: string;
-  lineNumber: string;
-  type: AuditEntryType;
-  timestamp: string | null;
-  message: string;
+  agent: string;
+  stance: string;
+  tone: ConsensusTone;
+  insight: string;
 }
 
-const EMPTY_DECISION_ANCESTRY: ReportWorkflowState["decision_ancestry"] = [];
-const EMPTY_HYGIENE_FINDINGS: ReportWorkflowState["hygiene_findings"] = [];
+interface IntegrityProofRow {
+  id: string;
+  riskFound: string;
+  mitigation: string;
+  status: IntegrityStatus;
+  tone: "resolved" | "open";
+  verifier: string;
+  severity: number;
+}
+
+interface HistoryRow {
+  id: string;
+  title: string;
+  dqs: number;
+  dateLabel: string;
+  influence: number[];
+  summary: string;
+  deltaFromPrevious: number | null;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -41,102 +62,288 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function inferAuditEntryType(message: string): AuditEntryType {
-  const normalized = message.toLowerCase();
-
-  if (
-    normalized.includes("cross-agent") ||
-    normalized.includes("rebuttal") ||
-    normalized.includes("negotiation") ||
-    normalized.includes("mediating")
-  ) {
-    return "NEGOTIATION";
-  }
-
-  if (
-    normalized.includes("review") ||
-    normalized.includes("[agent") ||
-    normalized.includes("red team") ||
-    normalized.includes("executive")
-  ) {
-    return "AGENT_REASONING";
-  }
-
-  return "PIPELINE_EXEC";
+function normalizeToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ");
 }
 
-function buildAuditEntries(logLines: string[]): AuditEntry[] {
-  return logLines.map((line, index) => {
-    const match = line.match(/^(\d{1,2}:\d{2}:\d{2})\s{2,}(.*)$/);
-    const timestamp = match?.[1] ?? null;
-    const message = (match?.[2] ?? line).trim();
+function formatMetadataTimestamp(value: string | undefined): string {
+  if (!value) {
+    return "Timestamp unavailable";
+  }
 
-    return {
-      id: `${index}-${line}`,
-      lineNumber: String(index + 1).padStart(3, "0"),
-      type: inferAuditEntryType(message),
-      timestamp,
-      message,
-    };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Timestamp unavailable";
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hour = String(parsed.getHours()).padStart(2, "0");
+  const minute = String(parsed.getMinutes()).padStart(2, "0");
+  const second = String(parsed.getSeconds()).padStart(2, "0");
+
+  return `${year}-${month}-${day} | ${hour}:${minute}:${second}`;
+}
+
+function parseClockToSeconds(value: string): number | null {
+  const match = value.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+    return null;
+  }
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function deriveDebateDurationSeconds(
+  auditEntries: Array<{ timestamp: string | null }>,
+  interactionRoundCount: number,
+  reviewCount: number,
+): number | null {
+  const timeline = auditEntries
+    .map((entry) => parseClockToSeconds(entry.timestamp ?? ""))
+    .filter((entry): entry is number => entry !== null);
+
+  if (timeline.length >= 2) {
+    const first = timeline[0];
+    const last = timeline[timeline.length - 1];
+    const raw = last >= first ? last - first : last + 86_400 - first;
+    if (raw > 0) {
+      return raw;
+    }
+  }
+
+  if (interactionRoundCount > 0) {
+    return interactionRoundCount * 12.4;
+  }
+  if (reviewCount > 0) {
+    return reviewCount * 6.8;
+  }
+
+  return null;
+}
+
+function buildExecutionId(decisionId: string, runId?: number): string {
+  const normalized = `${decisionId}:${runId ?? "NA"}`;
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 33 + normalized.charCodeAt(index)) % 46_656; // 36^3
+  }
+  const suffix = hash.toString(36).toUpperCase().padStart(3, "0").slice(-2);
+  const runSegment = typeof runId === "number" && Number.isFinite(runId) ? String(runId).padStart(3, "0").slice(-3) : "000";
+  return `BR-${runSegment}-${suffix}`;
+}
+
+const AGENT_ORDER_MAP = ["ceo", "cfo", "cto", "coo", "cmo", "chro", "compliance", "red-team"] as const;
+
+function buildPulsePositions(): Array<[number, number, number]> {
+  return AGENT_ORDER_MAP.map((_, index) => {
+    const angle = (index / AGENT_ORDER_MAP.length) * Math.PI * 2 - Math.PI / 2;
+    return [Math.cos(angle) * 0.95, Math.sin(angle) * 0.95, 0.35] as [number, number, number];
   });
 }
 
-function clampPercent(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(100, value));
+function isRedTeamAgent(agent: string): boolean {
+  return /red team|pre-mortem|premortem|resource competitor|counter|adversarial/i.test(agent);
 }
 
-function formatAgentSummaryLabel(agent: string, fallbackIndex: number): string {
+function formatRunHistoryDelta(delta: number | null): string {
+  if (delta === null || !Number.isFinite(delta)) {
+    return "Baseline run";
+  }
+  const rounded = Math.round(delta);
+  if (rounded === 0) {
+    return "No DQS delta";
+  }
+  return `${rounded > 0 ? "+" : ""}${rounded} DQS vs prior run`;
+}
+
+function displayAgentName(agent: string): string {
   const normalized = agent.trim().toLowerCase();
   if (normalized.includes("ceo")) {
-    return "CEO VISION";
+    return "CEO";
   }
   if (normalized.includes("cfo")) {
-    return "CFO MARGIN";
+    return "CFO";
   }
   if (normalized.includes("cto")) {
-    return "CTO TECH";
-  }
-  if (normalized.includes("pre-mortem")) {
-    return "PRE-MORTEM";
-  }
-  if (normalized.includes("resource competitor")) {
-    return "RESOURCE RIVAL";
+    return "CTO";
   }
   if (normalized.includes("compliance")) {
-    return "COMPLIANCE";
+    return "Compliance";
   }
-  return `${agent.trim().toUpperCase() || `REVIEW ${fallbackIndex + 1}`}`;
+  if (isRedTeamAgent(normalized)) {
+    return "Red Team";
+  }
+  if (normalized.length === 0) {
+    return "Reviewer";
+  }
+
+  return agent
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter((chunk) => chunk.length > 0)
+    .map((chunk) => chunk[0].toUpperCase() + chunk.slice(1).toLowerCase())
+    .join(" ");
 }
 
-function extractChairpersonCitations(activeReport: ReportWorkflowState): string[] {
-  const synthesisCitations = Array.isArray(activeReport.synthesis?.evidence_citations)
-    ? activeReport.synthesis.evidence_citations
-    : [];
-  if (synthesisCitations.length > 0) {
-    return synthesisCitations
-      .filter((entry): entry is string => typeof entry === "string")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .slice(0, 6);
+function summarizePriorityInsight(review: ReportReview): string {
+  const thesis = review.thesis.trim();
+  return (
+    review.blockers.find((entry) => entry.trim().length > 0) ??
+    review.required_changes.find((entry) => entry.trim().length > 0) ??
+    review.approval_conditions.find((entry) => entry.trim().length > 0) ??
+    review.risks.find((risk) => risk.evidence.trim().length > 0)?.evidence ??
+    (thesis.length > 0 ? thesis : "No priority insight captured for this reviewer.")
+  );
+}
+
+function extractExecutingModel(activeReport: ReportWorkflowState, activeReviews: ReportReview[]): string {
+  const rawRecord = asRecord(activeReport.raw);
+  const directKeys = ["model", "modelName", "executing_model", "executingModel", "workflow_model"];
+  for (const key of directKeys) {
+    const value = rawRecord?.[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
   }
 
-  const raw = asRecord(activeReport.raw);
-  if (!raw || !Array.isArray(raw.chairperson_evidence_citations)) {
-    return [];
+  const userContext = asRecord(rawRecord?.user_context);
+  const contextKeys = ["model", "modelName", "defaultModel", "chairpersonModel"];
+  for (const key of contextKeys) {
+    const value = userContext?.[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
   }
 
-  return raw.chairperson_evidence_citations
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0)
+  const agentConfigs = Array.isArray(userContext?.agentConfigs)
+    ? userContext.agentConfigs
+    : Array.isArray(rawRecord?.agentConfigs)
+      ? rawRecord.agentConfigs
+      : [];
+
+  const discoveredModels = new Set<string>();
+  for (const config of agentConfigs) {
+    const record = asRecord(config);
+    const model = record?.model;
+    if (typeof model === "string" && model.trim().length > 0) {
+      discoveredModels.add(model.trim());
+    }
+  }
+
+  if (discoveredModels.size === 1) {
+    return [...discoveredModels][0];
+  }
+  if (discoveredModels.size > 1) {
+    return "Multi-model governance runtime";
+  }
+
+  if (activeReviews.length >= 6) {
+    return "Boardroom multi-agent runtime";
+  }
+
+  return "Unspecified";
+}
+
+function resolveConsensusTone(review: ReportReview): { stance: string; tone: ConsensusTone } {
+  const uncertain = review.confidence < 0.65 || review.score < 6;
+  if (review.blocked) {
+    return { stance: "Blocked", tone: "blocked" };
+  }
+  if (isRedTeamAgent(review.agent)) {
+    return { stance: "Mitigated", tone: "mitigated" };
+  }
+  if (uncertain || review.blockers.length > 0) {
+    return { stance: "Caution", tone: "caution" };
+  }
+  return { stance: "Approved", tone: "approved" };
+}
+
+function buildIntegrityProofRows(activeReport: ReportWorkflowState, activeReviews: ReportReview[]): IntegrityProofRow[] {
+  const residualRiskTokens = new Set(
+    (activeReport.synthesis?.residual_risks ?? [])
+      .map((entry) => normalizeToken(entry))
+      .filter((entry) => entry.length > 0),
+  );
+
+  const rows: IntegrityProofRow[] = [];
+
+  activeReviews.forEach((review, reviewIndex) => {
+    review.risks.forEach((risk, riskIndex) => {
+      const riskHeadline = risk.type.trim() || `Risk ${riskIndex + 1}`;
+      const evidence = risk.evidence.trim();
+      const riskFound = evidence.length > 0 ? `${riskHeadline}: ${evidence}` : riskHeadline;
+      const normalizedRisk = normalizeToken(riskFound);
+      const residualMatch = [...residualRiskTokens].some((token) => normalizedRisk.includes(token) || token.includes(normalizedRisk));
+      const isOpen = review.blocked || residualMatch;
+
+      rows.push({
+        id: `${review.agent}-${reviewIndex}-${riskIndex}`,
+        riskFound,
+        mitigation:
+          review.required_changes.find((entry) => entry.trim().length > 0) ??
+          review.approval_conditions.find((entry) => entry.trim().length > 0) ??
+          (isOpen
+            ? "Mitigation not accepted yet. Define owner, trigger, and rollback plan before board sign-off."
+            : "Mitigation accepted during executive review and embedded in controls."),
+        status: isOpen ? "OPEN" : "RESOLVED",
+        tone: isOpen ? "open" : "resolved",
+        verifier: isOpen ? "Pending board closure" : "Verified by Compliance Agent",
+        severity: Number.isFinite(risk.severity) ? risk.severity : 0,
+      });
+    });
+  });
+
+  (activeReport.synthesis?.residual_risks ?? []).forEach((residual, index) => {
+    const normalizedResidual = normalizeToken(residual);
+    if (normalizedResidual.length === 0) {
+      return;
+    }
+
+    const alreadyCovered = rows.some((row) => normalizeToken(row.riskFound).includes(normalizedResidual));
+    if (alreadyCovered) {
+      return;
+    }
+
+    rows.push({
+      id: `residual-${index}`,
+      riskFound: residual,
+      mitigation: "Residual risk remains open. Add explicit contingency funding and owner accountability.",
+      status: "OPEN",
+      tone: "open",
+      verifier: "Pending board closure",
+      severity: 10,
+    });
+  });
+
+  if (rows.length === 0) {
+    rows.push({
+      id: "fallback-proof",
+      riskFound: "No explicit critical risks were logged by reviewers in this run.",
+      mitigation: "Run Red Team mode to force adversarial pre-mortem checks before final submission.",
+      status: "RESOLVED",
+      tone: "resolved",
+      verifier: "Governance fallback",
+      severity: 0,
+    });
+  }
+
+  return rows
+    .sort((left, right) => {
+      if (left.status !== right.status) {
+        return left.status === "OPEN" ? -1 : 1;
+      }
+      return right.severity - left.severity;
+    })
     .slice(0, 6);
-}
-
-function citationText(citation: string): string {
-  return citation.replace(/^\[[^\]]+\]\s*/, "");
 }
 
 export function WorkflowPreviewStage({
@@ -156,121 +363,35 @@ export function WorkflowPreviewStage({
   logLines,
   onPreviewIndexChange,
 }: WorkflowPreviewStageProps) {
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const shareFeedbackTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (shareFeedbackTimerRef.current !== null) {
+        window.clearTimeout(shareFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const liveAuditEntries = buildAuditEntries(logLines);
   const fallbackAuditEntries =
     activeReport !== null
       ? buildAuditEntries([
-          `Pipeline loaded for ${activeReport.decision_name}`,
-          `Evaluated ${Object.keys(activeReport.reviews).length} executive review(s)`,
-          `Computed DQS ${(activeReport.dqs * 10).toFixed(1)} / 100`,
-          `Recommendation: ${activeRecommendation ?? "Pending"}`,
-        ])
+        `Pipeline loaded for ${activeReport.decision_name}`,
+        `Evaluated ${Object.keys(activeReport.reviews).length} executive review(s)`,
+        `Computed DQS ${(activeReport.dqs * 10).toFixed(1)} / 100`,
+        `Recommendation: ${activeRecommendation ?? "Pending"}`,
+      ])
       : [];
   const auditEntries = liveAuditEntries.length > 0 ? liveAuditEntries : fallbackAuditEntries;
-
-  const decisionAncestry = activeReport?.decision_ancestry ?? EMPTY_DECISION_ANCESTRY;
-  const hygieneFindings = activeReport?.hygiene_findings ?? EMPTY_HYGIENE_FINDINGS;
-  const citations = useMemo(() => (activeReport ? extractChairpersonCitations(activeReport) : []), [activeReport]);
 
   const dqsPercent = clampPercent((activeReport?.dqs ?? 0) * 10);
   const substancePercent = clampPercent((activeReport?.substance_score ?? 0) * 10);
   const hygienePercent = clampPercent((activeReport?.hygiene_score ?? 0) * 10);
   const decisionStatus = activeRecommendation ?? activeReport?.synthesis?.final_recommendation ?? "Challenged";
   const decisionTone = (activeRecommendationTone ?? decisionStatus.toLowerCase()) as "approved" | "challenged" | "blocked";
-
-  const qualityRows = useMemo(
-    () =>
-      hygieneFindings.length > 0
-        ? hygieneFindings.slice(0, 3)
-        : activeGovernanceRows.length > 0
-          ? activeGovernanceRows.slice(0, 3).map((row) => ({
-              check: row.label,
-              detail: row.met ? "Control gate is satisfied." : "Control gate is currently missing.",
-              status: row.met ? "pass" : "warning",
-              score_impact: row.met ? 0 : 0.6,
-            }))
-          : [
-              {
-                check: "Financial Model Integrity",
-                detail: "Capital allocation follows internal risk-adjusted ROI standards.",
-                status: "pass" as const,
-                score_impact: 0,
-              },
-              {
-                check: "Governance Checklist",
-                detail: "External legal counsel review is missing for international expansion clauses.",
-                status: "warning" as const,
-                score_impact: 0.8,
-              },
-              {
-                check: "Risk Dimensionality",
-                detail: "Market volatility scenarios are not fully explored in Section 4.2.",
-                status: "fail" as const,
-                score_impact: 1.5,
-              },
-            ],
-    [activeGovernanceRows, hygieneFindings],
-  );
-
-  const sortedReviews = [...activeReviews].sort((a, b) => b.score - a.score);
-  const strongestReview = sortedReviews[0];
-  const primaryHygieneIssue = qualityRows.find((row) => row.status !== "pass");
-  const substanceDriver = strongestReview?.thesis ?? "Strong alignment on strategic potential and market timing.";
-  const hygieneDriver = primaryHygieneIssue
-    ? `${primaryHygieneIssue.status === "fail" ? "Critical Failure" : "Governance Gap"}: ${primaryHygieneIssue.detail}`
-    : "Controls are aligned with current governance expectations.";
-
-  const evidenceItems = useMemo(() => {
-    const rows: Array<{ id: string; label: string; text: string; url: string | null }> = [];
-    citations.forEach((entry, index) => {
-      rows.push({
-        id: `chair-${index}`,
-        label: "Chairperson",
-        text: citationText(entry),
-        url: null,
-      });
-    });
-    activeReviews.forEach((review, reviewIndex) => {
-      review.citations.forEach((citation, citationIndex) => {
-        rows.push({
-          id: `review-${reviewIndex}-${citationIndex}`,
-          label: review.agent,
-          text: `${citation.title || citation.claim}`.trim(),
-          url: citation.url || null,
-        });
-      });
-    });
-    const deduped = new Map<string, { id: string; label: string; text: string; url: string | null }>();
-    rows.forEach((row) => {
-      const key = `${row.url ?? ""}|${row.text}`;
-      if (!deduped.has(key)) {
-        deduped.set(key, row);
-      }
-    });
-    return [...deduped.values()].slice(0, 8);
-  }, [activeReviews, citations]);
-
-  const liveResearchFeed = useMemo(() => {
-    const fromLogs = auditEntries
-      .filter((entry) => entry.message.toLowerCase().includes("tavily") || entry.message.toLowerCase().includes("http"))
-      .map((entry, index) => ({
-        id: `log-${entry.id}`,
-        source: entry.type.replace("_", " "),
-        detail: entry.message,
-        ts: entry.timestamp ?? `L${String(index + 1).padStart(2, "0")}`,
-      }));
-
-    if (fromLogs.length > 0) {
-      return fromLogs.slice(-6);
-    }
-
-    return evidenceItems.slice(0, 6).map((item, index) => ({
-      id: `evidence-${item.id}`,
-      source: item.label,
-      detail: item.text,
-      ts: `R${String(index + 1).padStart(2, "0")}`,
-    }));
-  }, [auditEntries, evidenceItems]);
 
   const gaugeRadius = 110;
   const gaugeCircumference = 2 * Math.PI * gaugeRadius;
@@ -282,59 +403,345 @@ export function WorkflowPreviewStage({
   const gaugeFillDasharray = `${gaugeFill} ${gaugeCircumference}`;
   const gaugeTone = dqsPercent >= 75 ? "healthy" : dqsPercent >= 50 ? "watch" : "critical";
 
+  const consensusRows = useMemo<ConsensusRow[]>(
+    () =>
+      activeReviews.map((review, index) => {
+        const tone = resolveConsensusTone(review);
+        return {
+          id: `${review.agent}-${index}`,
+          agent: displayAgentName(review.agent),
+          stance: tone.stance,
+          tone: tone.tone,
+          insight: summarizePriorityInsight(review),
+        };
+      }),
+    [activeReviews],
+  );
+
+  const integrityRows = useMemo(() => (activeReport ? buildIntegrityProofRows(activeReport, activeReviews) : []), [activeReport, activeReviews]);
+
+  const unresolvedIntegrityCount = useMemo(
+    () => integrityRows.filter((entry) => entry.status === "OPEN").length,
+    [integrityRows],
+  );
+  const interactionRoundCount = activeReport?.interaction_rounds?.length ?? 0;
+  const debateDurationSeconds = useMemo(
+    () => deriveDebateDurationSeconds(auditEntries, interactionRoundCount, activeReviews.length),
+    [activeReviews.length, auditEntries, interactionRoundCount],
+  );
+  const debateDurationLabel = debateDurationSeconds !== null ? `Executed in ${debateDurationSeconds.toFixed(1)}s` : "";
+
+  const decisionDate = activeReport?.run_created_at ? formatRunTimestamp(activeReport.run_created_at) : "Unavailable";
+  const decisionTimestamp = formatMetadataTimestamp(activeReport?.run_created_at);
+  const auditId = activeReport
+    ? activeReport.run_id
+      ? `AUD-${String(activeReport.run_id).padStart(5, "0")}`
+      : `AUD-${activeReport.decision_id.slice(0, 8).toUpperCase()}`
+    : "AUD-UNAVAILABLE";
+  const executionId = activeReport ? buildExecutionId(activeReport.decision_id, activeReport.run_id) : "BR-000-00";
+
+  const executingModel = activeReport ? extractExecutingModel(activeReport, activeReviews) : "Unspecified";
+
+  const governanceHighlights = useMemo(() => {
+    if (activeGovernanceRows.length === 0) {
+      return [];
+    }
+
+    return activeGovernanceRows
+      .slice(0, 3)
+      .map((row) => (row.met ? `${row.label}: passed` : `${row.label}: requires follow-up`));
+  }, [activeGovernanceRows]);
+
+  const consensusGreenCount = useMemo(
+    () => consensusRows.filter((entry) => entry.tone === "approved" || entry.tone === "mitigated").length,
+    [consensusRows],
+  );
+  const consensusTotal = consensusRows.length;
+  const consensusRedCount = consensusTotal - consensusGreenCount;
+  const consensusGreenPercent = consensusTotal > 0 ? (consensusGreenCount / consensusTotal) * 100 : 0;
+  const consensusRedPercent = consensusTotal > 0 ? (consensusRedCount / consensusTotal) * 100 : 0;
+
+  const leadDissenter = useMemo(() => {
+    if (activeReviews.length === 0) {
+      return null;
+    }
+
+    const averageScore = activeReviews.reduce((sum, review) => sum + review.score, 0) / activeReviews.length;
+    const lowest = [...activeReviews].sort((left, right) => left.score - right.score)[0];
+    const isMaterialFriction = lowest.blocked || averageScore - lowest.score >= 1.2;
+    if (!isMaterialFriction) {
+      return null;
+    }
+
+    return {
+      agent: displayAgentName(lowest.agent),
+      reason: summarizePriorityInsight(lowest),
+      score: lowest.score,
+      avg: averageScore,
+    };
+  }, [activeReviews]);
+
+  const activePulseInfluence = useMemo(() => {
+    if (activeReviews.length === 0) {
+      return [0.28, 0.26, 0.24, 0.22, 0.2];
+    }
+
+    const tones = activeReviews.map((review) => {
+      const { tone } = resolveConsensusTone(review);
+      if (tone === "blocked") return 0.94;
+      if (tone === "caution") return 0.64;
+      if (tone === "approved") return 0.52;
+      return 0.2;
+    });
+
+    return [...tones, 0.28, 0.26, 0.24, 0.22].slice(0, 12);
+  }, [activeReviews]);
+
+  const pulsePositions = useMemo(() => buildPulsePositions(), []);
+
+  const historyRows = useMemo<HistoryRow[]>(
+    () =>
+      reportStates.map((state, index) => {
+        const dqsScore = Math.round(clampPercent(state.dqs * 10));
+        let deltaFromPrevious: number | null = null;
+
+        if (index + 1 < reportStates.length) {
+          const priorState = reportStates[index + 1];
+          const priorDqs = Math.round(clampPercent(priorState.dqs * 10));
+          deltaFromPrevious = dqsScore - priorDqs;
+        }
+
+        const influence = Object.values(state.reviews).map((r) => r.score);
+        const summary = state.synthesis?.executive_summary || state.decision_name;
+
+        return {
+          id: state.run_id ? `run-${state.run_id}` : `${state.decision_id}-${index}`,
+          title: state.decision_name,
+          dqs: dqsScore,
+          dateLabel: state.run_created_at ? formatMetadataTimestamp(state.run_created_at) : "Timestamp unavailable",
+          influence,
+          summary,
+          deltaFromPrevious,
+        };
+      }),
+    [reportStates],
+  );
+
+  const setShareMessage = useCallback((message: string) => {
+    setShareFeedback(message);
+    if (shareFeedbackTimerRef.current !== null) {
+      window.clearTimeout(shareFeedbackTimerRef.current);
+    }
+    shareFeedbackTimerRef.current = window.setTimeout(() => {
+      setShareFeedback(null);
+    }, 2400);
+  }, []);
+
+  const handleGeneratePdf = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.print();
+    setShareMessage("Print dialog opened.");
+  }, [setShareMessage]);
+
+  const handleCopyPermanentLink = useCallback(async () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareMessage("Permanent link copied.");
+    } catch {
+      setShareMessage("Unable to copy link.");
+    }
+  }, [setShareMessage]);
+
   return (
     <section className="preview-mode report-v3-mode">
       {activeReport && activeMetrics ? (
         <div className="briefing-shell">
-          {reportStates.length > 1 ? (
-            <div className="report-v3-switcher" role="tablist" aria-label="Decision report selector">
-              {reportStates.map((state, index) => (
-                <button
-                  key={state.run_id ? `run-${state.run_id}` : `${state.decision_id}-${state.run_created_at ?? index}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={clampedPreviewIndex === index}
-                  className={clampedPreviewIndex === index ? "active" : ""}
-                  onClick={() => onPreviewIndexChange(index)}
-                >
-                  {state.run_created_at
-                    ? `Run ${index + 1} - ${formatRunTimestamp(state.run_created_at) || state.decision_name}`
-                    : state.decision_name || `Decision ${index + 1}`}
-                </button>
-              ))}
-            </div>
-          ) : null}
 
           {error ? <div className="preview-error">{error}</div> : null}
 
-          <div className="briefing-grid structured-report-grid">
-            <article className={`briefing-card outcome-card tone-${decisionTone} layout-row-1-main`}>
+          <div className="executive-brief-grid">
+            <article className={`briefing-card decision-stamp-card tone-${decisionTone}`}>
               <header>
-                <span className="briefing-kicker">Executive Summary</span>
                 <span className={`briefing-status tone-${decisionTone}`}>{decisionStatus.toUpperCase()}</span>
               </header>
-              <h2>{activeReport.decision_name}</h2>
-              <p className="briefing-verdict">
-                {summaryLine || activeReport.synthesis?.executive_summary || "No chairperson verdict generated."}
-              </p>
-              <p className="briefing-meta">
-                Decision ID
-                {" · "}
-                <strong>{activeReport.decision_id.toUpperCase()}</strong>
-              </p>
+              <div className="decision-receipt-pill" aria-label="Execution metadata">
+                <span>{decisionTimestamp}</span>
+                <span>{executionId}</span>
+                <span>{debateDurationLabel}</span>
+              </div>
+
+              <div className="decision-stamp-layout">
+                <div className="decision-stamp-seal-wrap" aria-label="Final stable nucleus seal">
+                  <div className="decision-stamp-seal" aria-hidden="true">
+                    <DecisionPulse2D
+                      dqs={dqsPercent}
+                      agentInfluence={activePulseInfluence}
+                      agentPositions={pulsePositions}
+                      isStatic={true}
+                      stable={true}
+                    />
+                  </div>
+                  <div className={`decision-stamp-dqs tone-${gaugeTone}`}>
+                    <strong>{Math.round(dqsPercent)}</strong>
+                    <span>DQS</span>
+                  </div>
+                </div>
+
+                <div className="decision-stamp-copy">
+                  <h2>{activeReport.decision_name}</h2>
+                  <p>{summaryLine || activeReport.synthesis?.executive_summary || "No executive summary generated."}</p>
+                  <dl className="decision-stamp-metadata">
+                    <div>
+                      <dt>Date of Decision</dt>
+                      <dd>{decisionDate}</dd>
+                    </div>
+                    <div>
+                      <dt>Executing Agent Model</dt>
+                      <dd>{executingModel}</dd>
+                    </div>
+                    <div>
+                      <dt>Audit ID</dt>
+                      <dd>{auditId}</dd>
+                    </div>
+                  </dl>
+                  <div className="decision-share-row">
+                    <button type="button" onClick={handleGeneratePdf}>
+                      Generate PDF
+                    </button>
+                    <button type="button" onClick={handleCopyPermanentLink}>
+                      Permanent Link
+                    </button>
+                    {shareFeedback ? <span>{shareFeedback}</span> : null}
+                  </div>
+                </div>
+              </div>
             </article>
 
-            <article className="briefing-card pulse-card layout-row-1-side">
-              <h3>Decision Pulse & DQS</h3>
-              <div className="report-v3-gauge">
+            <article className="briefing-card consensus-matrix-card">
+              <header>
+                <span className="briefing-kicker">Consensus & Conflict Matrix</span>
+                <span className="matrix-summary">{consensusRows.length} agent perspectives</span>
+              </header>
+              <div className="consensus-meter-panel">
+                <div className="consensus-meter-head">
+                  <span>Consensus vs Friction</span>
+                  <strong>
+                    {consensusGreenCount} Green · {consensusRedCount} Red
+                  </strong>
+                </div>
+                <div className="consensus-meter" role="img" aria-label="Consensus versus friction meter">
+                  <span className="green" style={{ width: `${consensusGreenPercent}%` }} />
+                  <span className="red" style={{ width: `${consensusRedPercent}%` }} />
+                </div>
+              </div>
+
+              {leadDissenter ? (
+                <article className="lead-dissenter-card">
+                  <h4>Critical Friction Point</h4>
+                  <p>
+                    <strong>{leadDissenter.agent}</strong> scored this decision at {leadDissenter.score.toFixed(1)} vs board average{" "}
+                    {leadDissenter.avg.toFixed(1)}.
+                  </p>
+                  <p>{leadDissenter.reason}</p>
+                </article>
+              ) : null}
+
+              <table className="consensus-matrix-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Stance</th>
+                    <th>Priority Insight</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {consensusRows.length > 0 ? (
+                    consensusRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.agent}</td>
+                        <td>
+                          <span className={`stance-pill tone-${row.tone}`}>{row.stance}</span>
+                        </td>
+                        <td>{row.insight}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="matrix-empty">
+                        No reviewer outputs found for this run.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </article>
+
+            <article className="briefing-card integrity-proof-card">
+              <header>
+                <span className="briefing-kicker">Integrity Proof (Red Team Audit)</span>
+                <span className={`integrity-count tone-${unresolvedIntegrityCount > 0 ? "open" : "resolved"}`}>
+                  {unresolvedIntegrityCount > 0 ? `${unresolvedIntegrityCount} open` : "All closed"}
+                </span>
+              </header>
+
+              <div className="integrity-proof-list">
+                {integrityRows.map((entry) => (
+                  <article key={entry.id} className={`integrity-proof-item tone-${entry.tone}`}>
+                    <p>
+                      <strong>Risk Found:</strong> {entry.riskFound}
+                    </p>
+                    <p>
+                      <strong>Mitigation Strategy:</strong> {entry.mitigation}
+                    </p>
+                    <p>
+                      <strong>Status:</strong> <span className={`integrity-status tone-${entry.tone}`}>{entry.status}</span> ({entry.verifier})
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </article>
+
+            <article className="briefing-card executive-metrics-card">
+              <header>
+                <span className="briefing-kicker">Mathematical Rigor Snapshot</span>
+              </header>
+
+              <div className="executive-metrics-grid">
+                <article>
+                  <span>Substance</span>
+                  <strong>{Math.round(substancePercent)}</strong>
+                </article>
+                <article>
+                  <span>Hygiene</span>
+                  <strong>{Math.round(hygienePercent)}</strong>
+                </article>
+                <article>
+                  <span>Blocked Reviews</span>
+                  <strong>{blockedReviewCount}</strong>
+                </article>
+                <article>
+                  <span>Missing Sections</span>
+                  <strong>{missingSectionCount}</strong>
+                </article>
+              </div>
+
+              {governanceHighlights.length > 0 ? (
+                <ul className="executive-governance-highlights">
+                  {governanceHighlights.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div className="report-v3-gauge compact">
                 <svg viewBox="0 0 280 280" aria-hidden="true">
-                  <circle
-                    className="report-v3-gauge-track"
-                    cx="140"
-                    cy="140"
-                    r={gaugeRadius}
-                    strokeDasharray={gaugeTrackDasharray}
-                  />
+                  <circle className="report-v3-gauge-track" cx="140" cy="140" r={gaugeRadius} strokeDasharray={gaugeTrackDasharray} />
                   <circle
                     className={`report-v3-gauge-fill tone-${gaugeTone}`}
                     cx="140"
@@ -349,106 +756,15 @@ export function WorkflowPreviewStage({
                   <span>/ 100.0 DQS</span>
                 </div>
               </div>
-              <div className="briefing-governance-stats">
-                <span>{blockedReviewCount} blocked reviews</span>
-                <span>{missingSectionCount} missing sections</span>
-              </div>
             </article>
 
-            <article className="briefing-card scorecard-card layout-row-2-main">
-              <h3>Substance vs. Hygiene</h3>
-              <table className="briefing-score-table">
-                <thead>
-                  <tr>
-                    <th>Dimension</th>
-                    <th>Score</th>
-                    <th>Primary Driver</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Substance</td>
-                    <td>{Math.round(substancePercent)}/100</td>
-                    <td>{substanceDriver}</td>
-                  </tr>
-                  <tr>
-                    <td>Hygiene</td>
-                    <td>{Math.round(hygienePercent)}/100</td>
-                    <td>{hygieneDriver}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </article>
-
-            <article className="briefing-card persona-card layout-row-2-side">
-              <h3>Agent Personas</h3>
-              <div className="briefing-persona-strip">
-                {activeReviews.slice(0, 6).map((review, index) => {
-                  const personaScore = Math.round(clampPercent(review.score * 10));
-                  const personaStatus = review.blocked ? "Blocked" : review.confidence < 0.65 ? "Challenged" : "Aligned";
-                  const personaTone = review.blocked ? "blocked" : review.confidence < 0.65 ? "challenged" : "aligned";
-
-                  return (
-                    <article key={`${review.agent}-${index}`} className={`persona-strip-row tone-${personaTone}`}>
-                      <div className="persona-strip-head">
-                        <span className="persona-strip-label">{formatAgentSummaryLabel(review.agent, index)}</span>
-                        <strong className="persona-strip-score">{personaScore}</strong>
-                        <span className={`persona-badge tone-${personaTone}`}>{personaStatus}</span>
-                      </div>
-                      <div
-                        className="persona-strip-progress"
-                        role="progressbar"
-                        aria-label={`${formatAgentSummaryLabel(review.agent, index)} score`}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={personaScore}
-                      >
-                        <span className={`persona-strip-progress-fill tone-${personaTone}`} style={{ width: `${personaScore}%` }} />
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </article>
-
-            <article className="briefing-card citations-card layout-row-3-col-1">
-              <h3>External Citations</h3>
-              <div className="briefing-citation-list">
-                {evidenceItems.length > 0 ? (
-                  evidenceItems.map((item) => (
-                    <article key={item.id}>
-                      <span>{item.label}</span>
-                      {item.url ? (
-                        <a href={item.url} target="_blank" rel="noreferrer">{item.text}</a>
-                      ) : (
-                        <p>{item.text}</p>
-                      )}
-                    </article>
-                  ))
-                ) : (
-                  <p className="empty-hint">No external citations attached to this run.</p>
-                )}
-              </div>
-            </article>
-
-            <article className="briefing-card feed-card research-feed-card layout-row-3-col-2">
-              <h3>Live Research Feed</h3>
-              <div className="briefing-feed-list">
-                {liveResearchFeed.map((item) => (
-                  <p key={item.id}>
-                    <span>{item.ts}</span>
-                    <strong>[{item.source}]</strong>
-                    {item.detail}
-                  </p>
-                ))}
-              </div>
-            </article>
-
-            <article className="briefing-card feed-card refinement-feed-card layout-row-3-col-3">
-              <h3>Refinement Log</h3>
+            <article className="briefing-card audit-trace-card">
+              <header>
+                <span className="briefing-kicker">Audit Trace</span>
+              </header>
               <div className="briefing-feed-list">
                 {auditEntries.length > 0 ? (
-                  auditEntries.slice(-8).map((entry) => (
+                  auditEntries.slice(-10).map((entry) => (
                     <p key={entry.id}>
                       <span>{entry.timestamp ?? "--:--:--"}</span>
                       <strong>[{entry.type.replace("_", " ")}]</strong>
@@ -456,35 +772,52 @@ export function WorkflowPreviewStage({
                     </p>
                   ))
                 ) : (
-                  <p className="empty-hint">Waiting for refinement rounds.</p>
+                  <p className="empty-hint">No trace events captured for this run.</p>
                 )}
               </div>
             </article>
 
-            <article className="briefing-card ancestry-card layout-row-4-full">
-              <h3>Decision Ancestry</h3>
-              <p className="briefing-ancestry-meta">
-                Retrieval
-                {" · "}
-                {activeReport.decision_ancestry_retrieval_method === "vector-db"
-                  ? "Vector DB"
-                  : activeReport.decision_ancestry_retrieval_method === "lexical-fallback"
-                    ? "Lexical fallback"
-                    : "Not available"}
-              </p>
-              {decisionAncestry.length > 0 ? (
-                <ul>
-                  {decisionAncestry.slice(0, 3).map((match) => (
-                    <li key={match.decision_id}>
-                      <strong>{match.decision_name}</strong>
-                      <span>{Math.round(match.similarity * 100)}% similarity</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="empty-hint">No ancestry matches stored for this decision yet.</p>
-              )}
-            </article>
+            {historyRows.length > 1 ? (
+              <article className="briefing-card decision-history-card">
+                <header>
+                  <span className="briefing-kicker">Decision History</span>
+                </header>
+                <div className="run-history-track">
+                  {historyRows.map((row, index) => {
+                    const isActive = clampedPreviewIndex === index;
+                    return (
+                      <article key={row.id} className={`run-history-item ${isActive ? "active" : ""}`}>
+                        <span className={`run-history-dot ${index === 0 ? "latest" : ""}`} aria-hidden="true" />
+                        <button
+                          type="button"
+                          className="run-history-card"
+                          onClick={() => onPreviewIndexChange(index)}
+                        >
+                          <div className="run-history-card-head">
+                            <strong>Run #{historyRows.length - index}</strong>
+                            <p>{row.dateLabel}</p>
+                          </div>
+                          <div className="run-history-dqs-large">{row.dqs}%</div>
+                          <div className="run-history-stamp" aria-hidden="true">
+                            <DecisionPulse2D
+                              dqs={row.dqs}
+                              agentInfluence={row.influence}
+                              agentPositions={pulsePositions}
+                              isStatic={true}
+                            />
+                          </div>
+                          <div className="run-history-copy-wrap">
+                            <p className="run-history-delta">{formatRunHistoryDelta(row.deltaFromPrevious)}</p>
+                            <p className="run-history-summary">{row.summary}</p>
+                            <span className="run-history-report-link">Time Machine: Preview this report snapshot</span>
+                          </div>
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </article>
+            ) : null}
           </div>
         </div>
       ) : (

@@ -11,7 +11,13 @@ interface UseStrategyCreationParams {
 }
 
 interface UseStrategyCreationResult {
-  saveCreatedStrategy: () => void;
+  saveCreatedStrategy: () => Promise<void>;
+}
+
+interface StrategySaveResponse {
+  strategy?: DecisionStrategy;
+  error?: string;
+  details?: string;
 }
 
 export function useStrategyCreation({
@@ -20,7 +26,7 @@ export function useStrategyCreation({
   onResetDraft,
   onComplete,
 }: UseStrategyCreationParams): UseStrategyCreationResult {
-  const saveCreatedStrategy = useCallback(() => {
+  const saveCreatedStrategy = useCallback(async () => {
     const strategyName = createDraft.name.trim().length > 0 ? createDraft.name.trim() : "Untitled Strategic Decision";
     const strategyOwner = createDraft.owner.trim().length > 0 ? createDraft.owner.trim() : "Unassigned";
     const parsedReviewDate = createDraft.reviewDate.trim().length > 0 ? new Date(createDraft.reviewDate) : null;
@@ -64,6 +70,7 @@ export function useStrategyCreation({
       coreProperties: JSON.stringify(createDraft.coreProperties),
       capitalAllocationModel: JSON.stringify(createDraft.capitalAllocation),
       riskProperties: JSON.stringify(createDraft.riskProperties),
+      mitigations: JSON.stringify(createDraft.mitigations),
     };
 
     const createdStrategy: DecisionStrategy = {
@@ -80,7 +87,33 @@ export function useStrategyCreation({
       artifactSections,
     };
 
-    onCreated(createdStrategy);
+    let persistedStrategy = createdStrategy;
+
+    try {
+      const response = await fetch("/api/strategies?includeSensitive=true", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          strategy: createdStrategy,
+        }),
+      });
+      const payload = (await response.json()) as StrategySaveResponse;
+      if (!response.ok) {
+        throw new Error(payload.details || payload.error || "Failed to persist strategic decision.");
+      }
+      if (payload.strategy) {
+        persistedStrategy = {
+          ...payload.strategy,
+          artifactSections: createdStrategy.artifactSections,
+        };
+      }
+    } catch (error) {
+      console.warn("[useStrategyCreation] persisting strategy failed, continuing with local draft", error);
+    }
+
+    onCreated(persistedStrategy);
     onResetDraft();
     onComplete();
   }, [createDraft, onComplete, onCreated, onResetDraft]);

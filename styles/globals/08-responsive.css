@@ -1,0 +1,1029 @@
+@media (max-width: 1180px) {
+  .boardroom-header {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .boardroom-header-left {
+    width: 100%;
+  }
+
+  .boardroom-main {
+    flex-direction: column;
+  }
+
+  .strategy-stage {
+    flex-direction: column;
+  }
+
+  .strategy-gallery-pane {
+    padding: 16px;
+  }
+
+  .portfolio-governance-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-insights-top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-insight-highlights {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-insights-panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .governance-heatmap-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .portfolio-gallery-workbench.with-drawer {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-drawer {
+    position: static;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .strategy-gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pipeline-settings-stage {
+    flex-direction: column;
+  }
+
+  .pipeline-settings-stage.full-page {
+    flex-direction: row;
+  }
+
+  .strategy-sidebar {
+    width: 100%;
+    min-width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--slate-200);
+    max-height: 360px;
+  }
+
+  .strategy-preview {
+    padding: 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--slate-200);
+  }
+
+  .strategy-preview-card {
+    max-width: none;
+    border-radius: 20px;
+  }
+
+  .strategy-ancestry {
+    width: 100%;
+    min-width: 100%;
+    max-height: 420px;
+  }
+
+  .pipeline-settings-main {
+    border-right: 0;
+    border-bottom: 1px solid var(--slate-200);
+  }
+
+  .pipeline-settings-stage.full-page .pipeline-settings-main {
+    border-bottom: 0;
+  }
+
+  .pipeline-settings-shell {
+    max-width: none;
+    padding: 20px;
+  }
+
+  .pipeline-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pipeline-settings-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pipeline-settings-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .pipeline-back-button,
+  .pipeline-run-button {
+    width: 100%;
+  }
+
+  .ancestry-memory-rail {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+
+  .agent-config-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-config-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--slate-200);
+    max-height: 360px;
+  }
+
+  .agent-config-editor {
+    padding: 20px;
+  }
+
+  .agent-config-primary-grid,
+  .agent-config-advanced-body,
+  .agent-config-research-options {
+    grid-template-columns: 1fr;
+  }
+
+  .create-strategy-stage {
+    padding: 20px;
+  }
+
+  .create-editor-stream {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .mirror-sidebar {
+    position: static;
+    max-height: none;
+  }
+
+  .socratic-sidebar {
+    position: static;
+    max-height: none;
+  }
+
+  .create-reference-card {
+    max-width: 100%;
+  }
+
+  .create-reference-body {
+    padding: 44px 32px 64px;
+    gap: 34px;
+  }
+
+  .create-evidence-canvas {
+    min-height: 0 !important;
+    display: grid;
+    gap: 12px;
+  }
+
+  .create-right-rail {
+    display: grid;
+    gap: 12px;
+  }
+
+  .create-evidence-pane {
+    position: static;
+  }
+
+  .create-section-sidecar-detached {
+    position: static;
+    width: 100%;
+  }
+
+  .create-red-team-toggle {
+    min-height: auto;
+  }
+
+  .create-dqs-preview {
+    align-content: start;
+  }
+
+  .create-property-label.wide {
+    width: 226px;
+    min-width: 226px;
+  }
+
+  .create-section h3 {
+    font-size: clamp(30px, 4.2vw, 40px);
+  }
+
+  .create-strategy-footer {
+    padding: 24px 32px;
+  }
+
+  .create-strategy-footer-meta {
+    gap: 14px;
+  }
+
+  .boardroom-canvas {
+    min-height: 380px;
+    max-height: 440px;
+  }
+
+  .boardroom-panel {
+    width: 100%;
+    min-width: 100%;
+    border-left: 0;
+    border-top: 1px solid var(--slate-200);
+  }
+
+  .pipeline-settings-stage.full-page .workflow-runtime-layout {
+    grid-template-columns: minmax(0, 1fr) 420px;
+  }
+
+  .pipeline-settings-stage.full-page .workflow-runtime-layout .boardroom-panel {
+    width: 420px;
+    min-width: 420px;
+    border-left: 1px solid var(--slate-200);
+    border-top: 0;
+  }
+
+  .preview-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .preview-report-column {
+    padding-right: 0;
+  }
+
+  .audit-trail {
+    position: static;
+    height: auto;
+    min-height: 0;
+    max-height: 520px;
+  }
+
+  .report-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ancestry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-v3-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .report-v3-main {
+    padding-right: 0;
+  }
+
+  .report-v3-consensus-card {
+    grid-template-columns: 1fr;
+    border-radius: 28px;
+  }
+
+  .report-v3-gauge-panel {
+    border-radius: 30px;
+    padding: 20px;
+  }
+
+  .report-v3-assistant-rail {
+    position: static;
+    min-height: 0;
+    border-left: 0;
+    border-top: 1px solid #d9e3f1;
+    margin-top: 8px;
+    padding: 16px 0 0;
+    background: transparent;
+  }
+}
+
+@media (max-width: 760px) {
+  .boardroom-header {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .boardroom-header-left {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .boardroom-brand {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .boardroom-nav-divider {
+    display: none;
+  }
+
+  .strategy-sidebar-header {
+    padding: 14px 12px;
+  }
+
+  .strategy-list {
+    padding: 10px;
+  }
+
+  .strategy-gallery-pane {
+    padding: 10px;
+  }
+
+  .portfolio-gallery-header {
+    padding: 14px;
+  }
+
+  .portfolio-filter-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .portfolio-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .portfolio-filter-bar button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .portfolio-mode-switch button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .governance-heatmap-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mitigation-velocity-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .gallery-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gallery-action-grid button:nth-child(3) {
+    width: 100%;
+  }
+
+  .quicklook-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quicklook-pulse-wrap {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .strategy-gallery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-preview {
+    padding: 12px;
+  }
+
+  .pipeline-settings-shell {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .pipeline-settings-header {
+    gap: 10px;
+  }
+
+  .pipeline-settings-header h2 {
+    font-size: clamp(28px, 9.4vw, 38px);
+  }
+
+  .pipeline-settings-header h2 strong {
+    margin-left: 6px;
+  }
+
+  .pipeline-settings-header p {
+    font-size: 14px;
+  }
+
+  .pipeline-settings-kicker-row {
+    gap: 8px;
+  }
+
+  .pipeline-settings-card {
+    border-radius: 18px;
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .pipeline-settings-card-header h3 {
+    font-size: 19px;
+  }
+
+  .pipeline-settings-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    font-size: 20px;
+  }
+
+  .pipeline-round-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .pipeline-round-options button {
+    min-width: 0;
+    width: 100%;
+    border-radius: 12px;
+    padding: 11px 10px;
+    font-size: 14px;
+  }
+
+  .pipeline-inline-toggle {
+    align-items: flex-start;
+  }
+
+  .pipeline-inline-toggle-copy h4 {
+    font-size: 14px;
+  }
+
+  .pipeline-inline-toggle-copy p {
+    font-size: 12px;
+  }
+
+  .pipeline-persona-card {
+    border-radius: 12px;
+    padding: 10px 11px;
+  }
+
+  .pipeline-persona-card h4 {
+    font-size: 13px;
+  }
+
+  .pipeline-persona-card p {
+    font-size: 12px;
+  }
+
+  .pipeline-settings-footer {
+    border-radius: 16px;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .pipeline-cost-card strong {
+    font-size: 23px;
+  }
+
+  .pipeline-cost-card small {
+    font-size: 12px;
+  }
+
+  .pipeline-settings-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .pipeline-back-button,
+  .pipeline-run-button {
+    min-height: 50px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  .strategy-preview-card {
+    padding: 18px 14px;
+    gap: 14px;
+  }
+
+  .strategy-preview-card h2 {
+    font-size: clamp(24px, 8vw, 32px);
+  }
+
+  .strategy-summary {
+    font-size: 14px;
+  }
+
+  .strategy-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-metric-card strong {
+    font-size: 18px;
+  }
+
+  .strategy-preview-actions {
+    flex-direction: column;
+  }
+
+  .strategy-ancestry {
+    max-height: none;
+  }
+
+  .ancestry-memory-rail {
+    padding: 14px 12px 12px;
+  }
+
+  .ancestry-memory-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ancestry-memory-kicker {
+    align-self: flex-start;
+  }
+
+  .ancestry-memory-footer span {
+    font-size: 10px;
+  }
+
+  .strategy-action-button,
+  .strategy-run-button {
+    width: 100%;
+  }
+
+  .agent-config-sidebar-head {
+    padding: 14px 12px;
+  }
+
+  .agent-config-add {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+  }
+
+  .agent-config-sidebar-list {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .agent-config-item {
+    border-radius: 15px;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 12px 11px;
+  }
+
+  .agent-config-item-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+  }
+
+  .agent-config-item-avatar svg {
+    width: 25px;
+    height: 25px;
+  }
+
+  .agent-config-item-copy h3 {
+    font-size: 14px;
+  }
+
+  .agent-config-sidebar-footer {
+    padding: 10px;
+  }
+
+  .agent-config-editor {
+    padding: 14px;
+  }
+
+  .agent-config-editor-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+  }
+
+  .agent-config-editor-avatar svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .agent-config-editor-copy h2 {
+    font-size: clamp(24px, 8vw, 32px);
+  }
+
+  .agent-config-primary-card {
+    border-radius: 18px;
+    padding: 16px 14px;
+  }
+
+  .agent-config-advanced-card {
+    border-radius: 18px;
+  }
+
+  .agent-config-research-card {
+    border-radius: 18px;
+    padding: 14px;
+  }
+
+  .agent-config-advanced-toggle {
+    padding: 12px 14px;
+  }
+
+  .agent-config-advanced-body {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .agent-config-input {
+    border-radius: 10px;
+    font-size: 14px;
+  }
+
+  .create-strategy-stage {
+    padding: 12px;
+  }
+
+  .create-editor-stream {
+    gap: 12px;
+  }
+
+  .mirror-sidebar {
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .socratic-sidebar {
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .mirror-persona-pulse {
+    max-width: 104px;
+  }
+
+  .mirror-sidebar-header h3 {
+    font-size: 22px;
+  }
+
+  .mirror-checklist-head,
+  .mirror-checklist-row {
+    grid-template-columns: 48px 86px minmax(0, 1fr);
+  }
+
+  .mirror-intervention-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mirror-intervention-actions button {
+    width: 100%;
+  }
+
+  .mirror-inquiry-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mirror-inquiry-actions button {
+    width: 100%;
+  }
+
+  .create-reference-card {
+    border-radius: 8px;
+    margin-bottom: 52px;
+  }
+
+  .create-reference-body {
+    padding: 22px 14px 36px;
+    gap: 24px;
+  }
+
+  .create-reference-top {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .create-reference-version {
+    align-self: flex-end;
+  }
+
+  .create-title-input {
+    font-size: clamp(28px, 10vw, 42px);
+  }
+
+  .create-panel-body {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .create-assistant-panel {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .create-assistant-card {
+    padding: 12px;
+  }
+
+  .create-assistant-question {
+    font-size: 14px;
+  }
+
+  .create-assistant-actions {
+    flex-wrap: wrap;
+  }
+
+  .create-assistant-nav-button,
+  .create-assistant-save-button {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
+  }
+
+  .create-property-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .create-property-label,
+  .create-property-label.wide {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .create-property-money-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--slate-200);
+    border-radius: 8px;
+  }
+
+  .create-guidance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .create-sections {
+    gap: 30px;
+  }
+
+  .create-section h3 {
+    font-size: clamp(24px, 8.5vw, 34px);
+  }
+
+  .create-section-matrix {
+    min-width: 520px;
+  }
+
+  .create-matrix-input {
+    padding: 9px;
+    font-size: 11px;
+  }
+
+  .create-section-matrix-footer {
+    justify-content: stretch;
+  }
+
+  .create-matrix-add-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .create-strategy-footer {
+    padding: 14px;
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+    gap: 10px;
+  }
+
+  .create-strategy-footer-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .create-strategy-footer-meta {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .create-save-button,
+  .create-cancel-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .boardroom-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .boardroom-tabs {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .workspace-view-tabs {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .workspace-view-tabs button {
+    flex: 1;
+  }
+
+  .boardroom-tabs button {
+    flex: 1;
+  }
+
+  .boardroom-execute {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .boardroom-open-agent-settings {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .boardroom-canvas {
+    padding: 18px;
+  }
+
+  .boardroom-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .preview-mode {
+    padding: 14px;
+  }
+
+  .preview-layout {
+    gap: 10px;
+  }
+
+  .audit-trail {
+    border-radius: 14px;
+    max-height: 460px;
+  }
+
+  .audit-trail-header {
+    padding: 14px 14px 12px;
+  }
+
+  .audit-trail-heading h3 {
+    font-size: 16px;
+  }
+
+  .audit-trail-body {
+    padding: 6px 14px 12px;
+  }
+
+  .audit-trail-footer {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .audit-trail-status {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .audit-trail-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .report-hero {
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .report-hero-stats {
+    justify-items: start;
+  }
+
+  .report-content {
+    padding: 14px;
+  }
+
+  .report-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .snapshot-grid,
+  .mechanics-grid,
+  .ancestry-grid,
+  .prd-grid,
+  .synthesis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-switcher button {
+    width: 100%;
+  }
+
+  .preview-mode.report-v3-mode {
+    padding: 12px;
+  }
+
+  .report-v3-switcher {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .report-v3-switcher button {
+    width: 100%;
+    text-align: left;
+  }
+
+  .report-v3-consensus-card,
+  .report-v3-quality-card,
+  .report-v3-log-card,
+  .assistant-hero-card,
+  .assistant-questions-card,
+  .assistant-evidence-card {
+    border-radius: 18px;
+    padding: 12px;
+  }
+
+  .report-v3-left h2 {
+    margin-top: 12px;
+    font-size: clamp(40px, 14vw, 62px);
+  }
+
+  .report-v3-substance strong {
+    font-size: clamp(28px, 9.6vw, 42px);
+  }
+
+  .report-v3-gauge {
+    width: 196px;
+    height: 196px;
+  }
+
+  .report-v3-gauge-value strong {
+    font-size: clamp(38px, 10vw, 50px);
+  }
+
+  .report-v3-gauge-value span {
+    font-size: 11px;
+  }
+
+  .report-v3-consensus h3 {
+    font-size: clamp(20px, 6.6vw, 28px);
+  }
+
+  .report-v3-consensus p {
+    font-size: clamp(13px, 4.4vw, 18px);
+  }
+
+  .report-v3-executive-grid,
+  .report-v3-breakdown-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-v3-hygiene-item {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .report-v3-hygiene-item>strong {
+    grid-column: 2;
+    justify-self: flex-end;
+  }
+
+  .report-v3-outcome {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .assistant-title h3 {
+    font-size: clamp(20px, 6.2vw, 26px);
+  }
+
+  .assistant-gap-pill {
+    font-size: 10px;
+    padding: 7px 9px;
+  }
+
+  .assistant-question-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .assistant-question-actions button:last-child {
+    width: 100%;
+    min-height: 36px;
+    border-radius: 10px;
+  }
+}

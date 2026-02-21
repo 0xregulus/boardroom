@@ -6,6 +6,7 @@ import type {
   DraftCapitalAllocation,
   DraftCoreProperties,
   DraftRiskProperties,
+  StrategicMitigationEntry,
 } from "../types";
 import {
   buildCreateDraftFromStrategy,
@@ -100,6 +101,22 @@ export function useCreateDraft() {
     }));
   }
 
+  function upsertMitigation(entry: StrategicMitigationEntry): void {
+    setCreateDraft((prev) => {
+      const nextEntries = [...prev.mitigations];
+      const existingIndex = nextEntries.findIndex((item) => item.id === entry.id);
+      if (existingIndex >= 0) {
+        nextEntries[existingIndex] = entry;
+      } else {
+        nextEntries.push(entry);
+      }
+      return {
+        ...prev,
+        mitigations: nextEntries,
+      };
+    });
+  }
+
   function resetCreateDraft(): void {
     setCreateDraft(initialCreateStrategyDraft());
     setIsCreateReadOnly(false);
@@ -134,6 +151,7 @@ export function useCreateDraft() {
     updateCoreProperty,
     updateCapitalAllocation,
     updateRiskProperty,
+    upsertMitigation,
     resetCreateDraft,
     resetCreatePanelState,
   };

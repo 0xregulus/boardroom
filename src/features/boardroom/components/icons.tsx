@@ -28,6 +28,51 @@ export function PlusGlyph() {
   );
 }
 
+export function FileTextGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path d="M8 3h6l4 4v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M14 3v5h5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M9.5 12h5.5M9.5 15.5h5.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function EditGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path d="M4.5 19.5h4l9.4-9.4a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4.5 15.4v4.1Z" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m12.6 7.4 4 4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ClockGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.9" />
+      <path d="M12 7.4v5.2l3.6 2.1" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function RefreshGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path d="M19 6v5h-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M19 11a7 7 0 1 0 1.2 4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function CloseGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function TrashGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">

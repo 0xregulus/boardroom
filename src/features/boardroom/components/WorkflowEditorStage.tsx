@@ -1,8 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 
 import type { ResearchProvider } from "../../../research/providers";
-import type { DecisionStrategy, NodeStatus, WorkflowNode, WorkflowTask } from "../types";
+import type { DecisionStrategy, WorkflowNode } from "../types";
+import { WorkflowEditorPulseCanvas } from "./WorkflowEditorPulseCanvas";
+import { WorkflowEditorSidebar } from "./WorkflowEditorSidebar";
+import type { OrbitAgentView } from "./workflowEditorStage.helpers";
+import {
+  buildTaskIndex,
+  clamp01,
+  deriveActiveRebuttalRound,
+  domainForAgent,
+  extractTraceTag,
+  influenceFromAgent,
+  normalizeKey,
+  ORBIT_AGENT_RADIUS,
+  ORBIT_CENTER_X,
+  ORBIT_CENTER_Y,
+  outcomeForAgent,
+  PULSE_MAX_AGENTS,
+  REVIEWER_SPECS,
+  splitLogLine,
+  STAGE_FLOW,
+} from "./workflowEditorStage.helpers";
 
 interface WorkflowEditorStageProps {
   selectedStrategy: DecisionStrategy | null;
@@ -28,197 +47,6 @@ interface WorkflowEditorStageProps {
   onIncludeRedTeamPersonasChange: (checked: boolean) => void;
   onInteractionRoundsChange: (rounds: number) => void;
 }
-
-interface AgentOutcome {
-  label: string;
-  tone: "idle" | "running" | "approved" | "challenged" | "blocked";
-}
-
-interface OrbitAgentView {
-  id: string;
-  orbitIndex: number;
-  title: string;
-  domain: string;
-  subtitle: string;
-  status: NodeStatus;
-  outcome: AgentOutcome;
-  researchActive: boolean;
-  x: number;
-  y: number;
-  pullStrength: number;
-  roundPhase: number;
-  roundIntensity: number;
-  streamInfluence: number;
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function normalizeKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-function domainForAgent(title: string): string {
-  const normalized = title.toLowerCase();
-  if (normalized.includes("cfo") || normalized.includes("finance")) {
-    return "Finance";
-  }
-  if (normalized.includes("cto") || normalized.includes("tech")) {
-    return "Technology";
-  }
-  if (normalized.includes("compliance")) {
-    return "Compliance";
-  }
-  if (normalized.includes("pre-mortem")) {
-    return "Risk";
-  }
-  if (normalized.includes("risk agent")) {
-    return "Risk";
-  }
-  if (normalized.includes("devil")) {
-    return "Risk";
-  }
-  if (normalized.includes("competitor")) {
-    return "Strategy";
-  }
-  return "Strategy";
-}
-
-function outcomeForAgent(status: NodeStatus, title: string, disabled = false): AgentOutcome {
-  if (disabled) {
-    return { label: "Disabled", tone: "idle" };
-  }
-  if (status === "FAILED") {
-    return { label: "Blocked", tone: "blocked" };
-  }
-  if (status === "RUNNING") {
-    return { label: "Reviewing", tone: "running" };
-  }
-  if (status === "COMPLETED") {
-    if (
-      title === "Pre-Mortem" ||
-      title === "Compliance" ||
-      title === "Resource Competitor" ||
-      title === "Risk Agent" ||
-      title === "Devil's Advocate"
-    ) {
-      return { label: "Challenged", tone: "challenged" };
-    }
-    return { label: "Approved", tone: "approved" };
-  }
-  return { label: "Queued", tone: "idle" };
-}
-
-function influenceFromAgent(agent: OrbitAgentView | undefined): number {
-  if (!agent || agent.outcome.label === "Disabled") {
-    return 0;
-  }
-
-  if (agent.outcome.tone === "blocked") {
-    return 1;
-  }
-  if (agent.outcome.tone === "challenged") {
-    return 0.92;
-  }
-  if (agent.status === "RUNNING") {
-    return 0.9;
-  }
-  return 0;
-}
-
-function splitLogLine(line: string): { timestamp: string | null; message: string } {
-  const match = line.match(/^(\d{1,2}:\d{2}:\d{2})\s{2,}(.*)$/);
-  if (!match) {
-    return { timestamp: null, message: line };
-  }
-  return { timestamp: match[1], message: match[2] };
-}
-
-function extractTraceTag(message: string): { tag: string | null; message: string } {
-  const explicitMatch = message.match(/^(WARN|ERROR|EXEC)\s+(.+)$/i);
-  if (!explicitMatch) {
-    return { tag: null, message };
-  }
-
-  return {
-    tag: explicitMatch[1]!.toUpperCase(),
-    message: explicitMatch[2]!.trim(),
-  };
-}
-
-function deriveActiveRebuttalRound(logLines: string[], configuredRounds: number, isRunning: boolean): number {
-  if (configuredRounds <= 0) {
-    return 0;
-  }
-
-  let rebuttalStarted = false;
-  let highestCompleted = 0;
-
-  for (const line of logLines) {
-    if (/cross-agent rebuttal/i.test(line)) {
-      rebuttalStarted = true;
-    }
-
-    const completedMatch = line.match(/round\s+(\d+)\s+rebuttal completed/i);
-    if (completedMatch) {
-      const round = Number.parseInt(completedMatch[1] ?? "0", 10);
-      if (Number.isFinite(round)) {
-        highestCompleted = Math.max(highestCompleted, round);
-      }
-    }
-  }
-
-  if (!rebuttalStarted) {
-    return 0;
-  }
-
-  if (isRunning) {
-    return Math.min(configuredRounds, Math.max(1, highestCompleted + 1));
-  }
-
-  return Math.min(configuredRounds, Math.max(1, highestCompleted));
-}
-
-const STAGE_FLOW: ReadonlyArray<{ id: string; title: string; subtitle: string }> = [
-  { id: "1", title: "Strategic Context", subtitle: "Input brief" },
-  { id: "2", title: "Drafting Doc", subtitle: "Draft synthesis" },
-  { id: "3", title: "Parallel Reviewers", subtitle: "Executive orbit" },
-  { id: "4", title: "Cross-Agent Rebuttal", subtitle: "Debate rounds" },
-  { id: "5", title: "Feedback Synthesis", subtitle: "DQS composition" },
-  { id: "6", title: "Generate PRD", subtitle: "Artifact output" },
-  { id: "7", title: "DB Persist", subtitle: "State + memory" },
-];
-
-const REVIEWER_SPECS: ReadonlyArray<{ title: string; subtitle: string; requiresRedTeam?: boolean }> = [
-  { title: "CEO", subtitle: "Strategic viability" },
-  { title: "CFO", subtitle: "Financial integrity" },
-  { title: "CTO", subtitle: "Technical feasibility" },
-  { title: "Compliance", subtitle: "Legal & governance" },
-  { title: "Pre-Mortem", subtitle: "Failure-chain stress test", requiresRedTeam: true },
-  { title: "Risk Agent", subtitle: "Monte Carlo downside envelope", requiresRedTeam: true },
-  { title: "Resource Competitor", subtitle: "Competing allocation pressure", requiresRedTeam: true },
-  { title: "Devil's Advocate", subtitle: "No-go case pressure test", requiresRedTeam: true },
-];
-
-const REBUTTAL_ROUND_OPTIONS: readonly number[] = [1, 2, 3, 4, 5];
-const REFINEMENT_RING_LEVELS: readonly number[] = [1, 2, 3, 4, 5];
-const PULSE_MAX_AGENTS = 12;
-const ORBIT_VIEWBOX_WIDTH = 900;
-const ORBIT_VIEWBOX_HEIGHT = 620;
-const ORBIT_CENTER_X = 450;
-const ORBIT_CENTER_Y = 300;
-const ORBIT_AGENT_RADIUS = 336;
-const ORBIT_CENTER_LEFT = "50%";
-const ORBIT_CENTER_TOP = "64%";
-const DecisionPulse = dynamic(
-  () => import("./DecisionPulse").then((module) => module.DecisionPulse),
-  { ssr: false },
-);
 
 export function WorkflowEditorStage({
   includeExternalResearch,
@@ -279,16 +107,11 @@ export function WorkflowEditorStage({
 
   const orbitAgents = useMemo<OrbitAgentView[]>(() => {
     const reviewNode = nodeIndex.get("3");
-    const taskIndex = new Map<string, WorkflowTask>();
-    for (const task of reviewNode?.tasks ?? []) {
-      taskIndex.set(normalizeKey(task.title), task);
-    }
-
+    const taskIndex = buildTaskIndex(reviewNode?.tasks);
     const specByKey = new Map(REVIEWER_SPECS.map((spec) => [normalizeKey(spec.title), spec] as const));
     const renderedReviewers: Array<{ title: string; subtitle: string; requiresRedTeam?: boolean }> = [];
     const seen = new Set<string>();
 
-    // Keep known reviewers in stable order when configured and always show red-team personas.
     for (const spec of REVIEWER_SPECS) {
       const key = normalizeKey(spec.title);
       const isInTasks = taskIndex.has(key);
@@ -298,7 +121,6 @@ export function WorkflowEditorStage({
       }
     }
 
-    // Append custom reviewers created by users.
     for (const task of reviewNode?.tasks ?? []) {
       const key = normalizeKey(task.title);
       if (seen.has(key)) {
@@ -338,7 +160,7 @@ export function WorkflowEditorStage({
           ? "RUNNING"
           : isRunning && syntheticRunnerIndex === index
             ? "RUNNING"
-          : fallbackStatus;
+            : fallbackStatus;
       const outcome = outcomeForAgent(status, reviewer.title, disabled);
       const phase = activeRebuttalRound * 0.9 + orbitMotionTime * 1.35 + index * 0.72;
       const angularNudge = Math.sin(phase) * (0.014 + executionMomentum * 0.06);
@@ -473,7 +295,7 @@ export function WorkflowEditorStage({
       const liveKineticFloor = !isDisabled && liveOrbitExecution
         ? 0.14 + agent.roundIntensity * 0.22
         : 0;
-      const runningBoost = 0; // Placeholder, adjust if a specific runningBoost logic is needed
+      const runningBoost = 0;
       const dx = (agent.x - ORBIT_CENTER_X) / 306;
       const dy = (ORBIT_CENTER_Y - agent.y) / 306;
       const angle = Math.atan2(agent.y - ORBIT_CENTER_Y, agent.x - ORBIT_CENTER_X) + agent.roundPhase * 0.07;
@@ -487,8 +309,6 @@ export function WorkflowEditorStage({
               : 0.2
           : 1;
 
-      // If we have live influence from the stream, use it.
-      // Otherwise fallback to the local calculated logic.
       const rawInfluence = isRunning && agent.streamInfluence > 0
         ? Math.max(
           agent.streamInfluence * focusFactor,
@@ -601,7 +421,6 @@ export function WorkflowEditorStage({
     return [...refinementEntries, ...researchEntries].slice(-14);
   }, [refinementFeed, researchEvidence, researchProvider]);
 
-  const pulseStateClass = executionSnapshot.state.toLowerCase().replace(/\s+/g, "-");
   const selectedStep = selectedNode ?? nodeIndex.get(selectedNodeId ?? "") ?? stageSteps[0] ?? null;
 
   return (
@@ -622,202 +441,37 @@ export function WorkflowEditorStage({
                     Research: {researchProvider}
                   </span>
                 ) : null}
-
               </div>
 
-              <section className="pulse-visual-grid">
-                <section className="decision-pulse-zone">
-                  <header>
-                    <div className="decision-pulse-header-copy">
-                      <h2>Decision Pulse</h2>
-                      <div className="pulse-metric-gauges" role="group" aria-label="Substance and Hygiene gauges">
-                        <div className="pulse-metric-row">
-                          <div className="pulse-metric-label">
-                            <span>Substance</span>
-                            <strong>{executionSnapshot.substance}</strong>
-                          </div>
-                          <div className="pulse-metric-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={executionSnapshot.substance}>
-                            <span className="pulse-metric-fill substance" style={{ width: `${executionSnapshot.substance}%` }} />
-                          </div>
-                        </div>
-                        <div className="pulse-metric-row">
-                          <div className="pulse-metric-label">
-                            <span>Hygiene</span>
-                            <strong>{executionSnapshot.hygiene}</strong>
-                          </div>
-                          <div className="pulse-metric-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={executionSnapshot.hygiene}>
-                            <span className="pulse-metric-fill hygiene" style={{ width: `${executionSnapshot.hygiene}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <strong className={`pulse-state state-${pulseStateClass}`}>{executionSnapshot.state}</strong>
-                  </header>
-
-                  <div className="orbit-stage">
-                    <svg className="pulse-ring-svg" viewBox="0 0 900 620" aria-hidden="true">
-                      <defs>
-                        <radialGradient id="pulse-core-fill" cx="50%" cy="45%" r="58%">
-                          <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.9" />
-                          <stop offset="40%" stopColor="#7c3aed" stopOpacity="0.82" />
-                          <stop offset="78%" stopColor="#ec4899" stopOpacity="0.72" />
-                          <stop offset="100%" stopColor="#fb923c" stopOpacity="0.65" />
-                        </radialGradient>
-                      </defs>
-                      {REFINEMENT_RING_LEVELS.map((round) => (
-                        <circle
-                          key={`ring-${round}`}
-                          cx={ORBIT_CENTER_X}
-                          cy={ORBIT_CENTER_Y}
-                          r={108 + round * 28}
-                          className={`refinement-ring${interactionRounds >= round ? " active" : ""}`}
-                          style={interactionRounds >= round ? { animationDelay: `${round * 220}ms` } : undefined}
-                        />
-                      ))}
-                      <circle cx={ORBIT_CENTER_X} cy={ORBIT_CENTER_Y} r="236" className="pulse-orbit-ring" />
-                      {orbitAgents.map((agent) => (
-                        <line
-                          key={`link-${agent.id}`}
-                          x1={ORBIT_CENTER_X}
-                          y1={ORBIT_CENTER_Y}
-                          x2={agent.x}
-                          y2={agent.y}
-                          className={`pulse-agent-link tone-${agent.outcome.tone}${agent.status === "RUNNING" ? " active" : ""}`}
-                        />
-                      ))}
-                      {REFINEMENT_RING_LEVELS.map((round) => (
-                        <text
-                          key={`ring-label-${round}`}
-                          x={ORBIT_CENTER_X + 108 + round * 28 + 8}
-                          y={ORBIT_CENTER_Y - 4}
-                          className={`refinement-ring-label${interactionRounds >= round ? " active" : ""}`}
-                        >
-                          R{round}
-                        </text>
-                      ))}
-                      {orbitAgents.map((agent) => (
-                        <circle key={`dot-${agent.id}`} cx={agent.x} cy={agent.y} r="4.5" className="pulse-orbit-dot" />
-                      ))}
-                    </svg>
-
-                    <div className="pulse-core-three-wrapper" style={{ left: ORBIT_CENTER_LEFT, top: ORBIT_CENTER_TOP }}>
-                      <DecisionPulse
-                        dqs={pulseDqs}
-                        agentInfluence={pulseAgentInfluence}
-                        thinkingAgents={thinkingAgents}
-                        agentPositions={pulseAgentPositions}
-                        runtimeActive={isRunning}
-                      />
-                    </div>
-
-                    {orbitAgents.map((agent) => (
-                      <button
-                        key={agent.id}
-                        type="button"
-                        className={`orbit-agent tone-${agent.outcome.tone}${selectedStep?.id === "3" ? " selected" : ""}`}
-                        style={{
-                          left: `${(agent.x / ORBIT_VIEWBOX_WIDTH) * 100}%`,
-                          top: `${(agent.y / ORBIT_VIEWBOX_HEIGHT) * 100}%`,
-                        }}
-                        onClick={() => {
-                          const reviewNode = nodeIndex.get("3");
-                          if (reviewNode) {
-                            onNodeClick(reviewNode);
-                          }
-                        }}
-                      >
-                        <div className="orbit-agent-head">
-                          <span>{agent.domain}</span>
-                          <strong>{agent.outcome.label}</strong>
-                        </div>
-                        <h4>{agent.title}</h4>
-                        <p>{agent.subtitle}</p>
-                        {agent.researchActive ? <span className="orbit-tavily-indicator">{researchProvider}</span> : null}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              </section>
+              <WorkflowEditorPulseCanvas
+                researchProvider={researchProvider}
+                interactionRounds={interactionRounds}
+                orbitAgents={orbitAgents}
+                selectedStepId={selectedStep?.id}
+                nodeIndex={nodeIndex}
+                onNodeClick={onNodeClick}
+                pulseDqs={pulseDqs}
+                pulseAgentInfluence={pulseAgentInfluence}
+                pulseAgentPositions={pulseAgentPositions}
+                thinkingAgents={thinkingAgents}
+                isRunning={isRunning}
+                executionSnapshot={executionSnapshot}
+              />
             </div>
           </div>
 
-          <aside className="boardroom-panel boardroom-pulse-aside">
-            <div className="panel-header">
-              <h2>Workflow Editor</h2>
-              <p>View execution status and step-level progress in real time.</p>
-            </div>
-
-            <div className="panel-body boardroom-pulse-aside-body">
-              <label className="workflow-control-toggle" htmlFor="editor-enable-research">
-                <div>
-                  <strong>Enable Research</strong>
-                  <p>Use {researchProvider} web research during executive reviews.</p>
-                </div>
-                <span className={`pipeline-switch${!researchProviderConfigured ? " disabled" : ""}`}>
-                  <input
-                    id="editor-enable-research"
-                    type="checkbox"
-                    checked={includeExternalResearch}
-                    onChange={(event) => onIncludeExternalResearchChange(event.target.checked)}
-                    disabled={!researchProviderConfigured}
-                  />
-                  <span className="pipeline-switch-track" />
-                </span>
-              </label>
-
-              <label className="workflow-control-toggle" htmlFor="editor-enable-red-team">
-                <div>
-                  <strong>Enable Red-Team</strong>
-                  <p>Activate Pre-Mortem, Resource Competitor, Risk Agent, and Devil&apos;s Advocate reviewers.</p>
-                </div>
-                <span className="pipeline-switch">
-                  <input
-                    id="editor-enable-red-team"
-                    type="checkbox"
-                    checked={includeRedTeamPersonas}
-                    onChange={(event) => onIncludeRedTeamPersonasChange(event.target.checked)}
-                  />
-                  <span className="pipeline-switch-track" />
-                </span>
-              </label>
-
-              <div className="workflow-control-rounds">
-                <p>Cross-Agent Rebuttal Rounds</p>
-                <div className="workflow-control-round-buttons" role="group" aria-label="Cross-Agent Rebuttal Rounds">
-                  {REBUTTAL_ROUND_OPTIONS.map((rounds) => (
-                    <button
-                      key={rounds}
-                      type="button"
-                      className={interactionRounds === rounds ? "active" : undefined}
-                      onClick={() => onInteractionRoundsChange(rounds)}
-                    >
-                      {rounds}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="panel-logs boardroom-pulse-footer-log">
-              <div className="log-header">
-                <span>Execution Trace</span>
-                <span className="log-status" aria-hidden="true" style={{ opacity: isRunning ? 1 : 0.35 }} />
-              </div>
-              <div className="log-body">
-                {executionTraceEntries.length > 0 ? (
-                  executionTraceEntries.map((entry) => (
-                    <p key={entry.id}>
-                      {entry.timestamp ? <span className="log-time">{entry.timestamp}</span> : null}
-                      <span className={`log-tag tag-${entry.tag.toLowerCase()}`}>[{entry.tag}]</span>
-                      {entry.message}
-                    </p>
-                  ))
-                ) : (
-                  <p className="log-idle">Awaiting pipeline execution...</p>
-                )}
-              </div>
-            </div>
-          </aside>
+          <WorkflowEditorSidebar
+            includeExternalResearch={includeExternalResearch}
+            researchProvider={researchProvider}
+            researchProviderConfigured={researchProviderConfigured}
+            includeRedTeamPersonas={includeRedTeamPersonas}
+            interactionRounds={interactionRounds}
+            onIncludeExternalResearchChange={onIncludeExternalResearchChange}
+            onIncludeRedTeamPersonasChange={onIncludeRedTeamPersonasChange}
+            onInteractionRoundsChange={onInteractionRoundsChange}
+            executionTraceEntries={executionTraceEntries}
+            isRunning={isRunning}
+          />
         </div>
       </section>
     </section>

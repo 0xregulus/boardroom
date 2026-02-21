@@ -64,13 +64,25 @@ function buildStatePreview(run: WorkflowRunRecord): Record<string, unknown> {
   const decisionName = asString(run.decisionName) ?? `Decision ${run.decisionId}`;
   const status = asString(run.stateStatus) ?? run.workflowStatus;
   const missingSections = run.missingSections.filter((entry) => entry.trim().length > 0).slice(0, 25);
+  const summaryLine = asString(run.summaryLine);
 
   return {
     decision_id: run.decisionId,
     decision_name: decisionName,
     dqs: run.dqs,
     status,
+    summary_line: summaryLine,
     missing_sections: missingSections,
+    review_stances: run.reviewStances.map((entry) => ({
+      agent: entry.agent,
+      stance: entry.stance,
+      score: entry.score,
+      confidence: entry.confidence,
+    })),
+    risk_findings_count: run.riskFindingsCount,
+    mitigation_count: run.mitigationCount,
+    pending_mitigations_count: run.pendingMitigationsCount,
+    friction_score: run.frictionScore,
     reviews: {},
     synthesis: null,
     prd: null,

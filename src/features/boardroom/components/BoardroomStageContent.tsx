@@ -27,8 +27,8 @@ export function BoardroomStageContent({
   workspaceView,
   activeTab,
   strategyListProps,
-  strategyDetailsProps,
-  decisionAncestryPanelProps,
+  strategyDetailsProps: _strategyDetailsProps,
+  decisionAncestryPanelProps: _decisionAncestryPanelProps,
   createStrategyStageProps,
   agentConfigModalProps,
   workflowEditorStageProps,
@@ -36,18 +36,10 @@ export function BoardroomStageContent({
 }: BoardroomStageContentProps) {
   if (appStage === "list") {
     return (
-      <section className="strategy-stage">
-        <aside className="strategy-sidebar">
+      <section className="strategy-stage strategy-gallery-stage">
+        <div className="strategy-gallery-pane">
           <StrategyList {...strategyListProps} />
-        </aside>
-
-        <div className="strategy-preview">
-          <StrategyDetails {...strategyDetailsProps} />
         </div>
-
-        <aside className="strategy-ancestry">
-          <DecisionAncestryPanel {...decisionAncestryPanelProps} />
-        </aside>
       </section>
     );
   }

@@ -231,6 +231,36 @@ function readPropertyText(value: unknown): string {
   ]);
 }
 
+function readMitigations(value: unknown): Array<Record<string, string>> {
+  const raw =
+    typeof value === "string"
+      ? (() => {
+        try {
+          return JSON.parse(value) as unknown;
+        } catch {
+          return null;
+        }
+      })()
+      : value;
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => entry !== null)
+    .map((entry) => ({
+      id: asString(entry.id).trim(),
+      sectionKey: asString(entry.sectionKey).trim(),
+      riskTitle: asString(entry.riskTitle).trim(),
+      description: asString(entry.description).trim(),
+      mitigationText: asString(entry.mitigationText).trim(),
+      resolvedAt: asString(entry.resolvedAt).trim(),
+    }))
+    .filter((entry) => entry.id.length > 0 && entry.mitigationText.length > 0);
+}
+
 function readPropertyNumber(value: unknown): number | null {
   const primitive = asNumber(value);
   if (primitive !== null) {
@@ -391,6 +421,11 @@ export function buildArtifactSections(
 
   if (hasAnyContent(riskProperties)) {
     sections.riskProperties = JSON.stringify(riskProperties);
+  }
+
+  const mitigations = readMitigations(pickProperty(properties, ["Mitigations", "mitigations"]));
+  if (mitigations.length > 0) {
+    sections.mitigations = JSON.stringify(mitigations);
   }
 
   return sections;

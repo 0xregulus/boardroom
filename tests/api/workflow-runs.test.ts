@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockRequest, createMockResponse } from "../helpers/next_api";
 
@@ -6,11 +6,27 @@ const mocks = vi.hoisted(() => ({
   listWorkflowRuns: vi.fn(),
 }));
 
+const guardMocks = vi.hoisted(() => ({
+  enforceRateLimit: vi.fn(),
+  enforceSensitiveRouteAccess: vi.fn(),
+}));
+
 vi.mock("../../src/store/postgres", () => ({
   listWorkflowRuns: mocks.listWorkflowRuns,
 }));
 
+vi.mock("../../src/security/request_guards", () => ({
+  enforceRateLimit: guardMocks.enforceRateLimit,
+  enforceSensitiveRouteAccess: guardMocks.enforceSensitiveRouteAccess,
+}));
+
 import handler from "../../pages/api/workflow/runs";
+
+beforeEach(() => {
+  mocks.listWorkflowRuns.mockReset();
+  guardMocks.enforceRateLimit.mockReset().mockResolvedValue(true);
+  guardMocks.enforceSensitiveRouteAccess.mockReset().mockReturnValue(true);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -25,6 +41,35 @@ describe("API /api/workflow/runs", () => {
 
     expect(mock.statusCode).toBe(405);
     expect(mock.headers.Allow).toBe("GET");
+  });
+
+  it("returns early when rate limiting denies the request", async () => {
+    guardMocks.enforceRateLimit.mockResolvedValueOnce(false);
+
+    const req = createMockRequest({
+      method: "GET",
+      query: { decisionId: "d-1" },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    expect(mocks.listWorkflowRuns).not.toHaveBeenCalled();
+    expect(guardMocks.enforceSensitiveRouteAccess).not.toHaveBeenCalled();
+  });
+
+  it("returns early when sensitive access is denied", async () => {
+    guardMocks.enforceSensitiveRouteAccess.mockReturnValueOnce(false);
+
+    const req = createMockRequest({
+      method: "GET",
+      query: { decisionId: "d-1" },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    expect(mocks.listWorkflowRuns).not.toHaveBeenCalled();
   });
 
   it("returns 400 when decisionId is missing", async () => {
@@ -78,7 +123,20 @@ describe("API /api/workflow/runs", () => {
         workflowStatus: "PERSISTED",
         decisionName: "Decision One",
         stateStatus: "DECIDED",
+        summaryLine: "Decision One is ready for execution.",
         missingSections: ["Baseline"],
+        reviewStances: [
+          {
+            agent: "CEO",
+            stance: "approved",
+            score: 8,
+            confidence: 0.82,
+          },
+        ],
+        riskFindingsCount: 2,
+        mitigationCount: 1,
+        pendingMitigationsCount: 1,
+        frictionScore: 0.4,
         createdAt: "2026-02-16T12:00:00.000Z",
       },
     ]);
@@ -105,6 +163,18 @@ describe("API /api/workflow/runs", () => {
       dqs: 8.7,
       status: "DECIDED",
       missing_sections: ["Baseline"],
+      review_stances: [
+        {
+          agent: "CEO",
+          stance: "approved",
+          score: 8,
+          confidence: 0.82,
+        },
+      ],
+      risk_findings_count: 2,
+      mitigation_count: 1,
+      pending_mitigations_count: 1,
+      friction_score: 0.4,
       reviews: {},
       synthesis: null,
       prd: null,
@@ -149,6 +219,24 @@ describe("API /api/workflow/runs", () => {
     expect(mock.statusCode).toBe(200);
   });
 
+  it("accepts numeric string query limits", async () => {
+    mocks.listWorkflowRuns.mockResolvedValueOnce([]);
+
+    const req = createMockRequest({
+      method: "GET",
+      query: {
+        decisionId: "d-9",
+        limit: "3",
+      },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    expect(mocks.listWorkflowRuns).toHaveBeenCalledWith("d-9", 3);
+    expect(mock.statusCode).toBe(200);
+  });
+
   it("falls back to default limit when query limit is invalid", async () => {
     mocks.listWorkflowRuns.mockResolvedValueOnce([]);
 
@@ -165,6 +253,43 @@ describe("API /api/workflow/runs", () => {
 
     expect(mocks.listWorkflowRuns).toHaveBeenCalledWith("d-4", 20);
     expect(mock.statusCode).toBe(200);
+  });
+
+  it("uses preview fallbacks when decision name and status are missing", async () => {
+    mocks.listWorkflowRuns.mockResolvedValueOnce([
+      {
+        id: 11,
+        decisionId: "decision-11",
+        dqs: 6.4,
+        gateDecision: "challenged",
+        workflowStatus: "PERSISTED",
+        decisionName: "  ",
+        stateStatus: 1 as unknown as string,
+        summaryLine: null,
+        missingSections: ["  ", "Baseline", ""],
+        reviewStances: [],
+        riskFindingsCount: 0,
+        mitigationCount: 0,
+        pendingMitigationsCount: 0,
+        frictionScore: 0,
+        createdAt: "2026-02-20T00:00:00.000Z",
+      },
+    ]);
+
+    const req = createMockRequest({
+      method: "GET",
+      query: { decisionId: "decision-11" },
+    });
+    const mock = createMockResponse();
+
+    await handler(req, mock.res);
+
+    const firstRun = (mock.body as any).runs[0];
+    expect(firstRun.state_preview).toMatchObject({
+      decision_name: "Decision decision-11",
+      status: "PERSISTED",
+      missing_sections: ["Baseline"],
+    });
   });
 
   it("returns generic 500 errors without internal details", async () => {

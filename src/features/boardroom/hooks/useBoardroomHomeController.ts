@@ -80,6 +80,7 @@ export function useBoardroomHomeController({
     updateCoreProperty,
     updateCapitalAllocation,
     updateRiskProperty,
+    upsertMitigation,
     resetCreateDraft,
     resetCreatePanelState,
     toggleCore,
@@ -174,6 +175,7 @@ export function useBoardroomHomeController({
   const {
     isLoadingStrategyDetails,
     openSelectedStrategyDetails,
+    openStrategyDetailsFor,
     resetStrategyDetailsLoading,
   } = useStrategyDetailsLoader({
     selectedStrategy,
@@ -190,6 +192,8 @@ export function useBoardroomHomeController({
     onResetDraft: resetCreateDraft,
     onComplete: openDashboardList,
   });
+
+  const [queuedRerunStrategyId, setQueuedRerunStrategyId] = useState<string | null>(null);
 
   const {
     openCreateStrategyForm,
@@ -210,6 +214,72 @@ export function useBoardroomHomeController({
     openWorkspacePreview,
   });
 
+  const openReportFromStrategy = useCallback(
+    (strategy: DecisionStrategy, options?: { runId?: number }): void => {
+      selectStrategy(strategy);
+      setDecisionId(strategy.id);
+
+      const historyEntries = workflowRunHistoryByDecision[strategy.id] ?? [];
+      if (historyEntries.length === 0) {
+        openWorkspacePreview();
+        return;
+      }
+
+      const selectedRunId = options?.runId;
+      const prioritizedEntries = typeof selectedRunId === "number"
+        ? [
+          ...historyEntries.filter((entry) => entry.id === selectedRunId),
+          ...historyEntries.filter((entry) => entry.id !== selectedRunId),
+        ]
+        : historyEntries;
+      const prioritizedStates = prioritizedEntries.map((entry) => entry.state).filter((state): state is unknown => Boolean(state));
+
+      if (prioritizedStates.length > 0) {
+        showWorkflowRunHistory(prioritizedStates);
+      }
+      openWorkspacePreview();
+    },
+    [openWorkspacePreview, selectStrategy, setDecisionId, showWorkflowRunHistory, workflowRunHistoryByDecision],
+  );
+
+  const openForgeFromStrategy = useCallback(
+    (strategy: DecisionStrategy): void => {
+      selectStrategy(strategy);
+      setDecisionId(strategy.id);
+      openStrategyDetailsFor(strategy);
+    },
+    [openStrategyDetailsFor, selectStrategy, setDecisionId],
+  );
+
+  const openRunHistoryFromStrategy = useCallback(
+    (strategy: DecisionStrategy, options?: { runId?: number }): void => {
+      openReportFromStrategy(strategy, options);
+    },
+    [openReportFromStrategy],
+  );
+
+  const rerunStrategyFromGallery = useCallback(
+    (strategy: DecisionStrategy): void => {
+      selectStrategy(strategy);
+      setDecisionId(strategy.id);
+      openWorkspaceEditor();
+      initializeWorkflowSession(strategy);
+      setQueuedRerunStrategyId(strategy.id);
+    },
+    [initializeWorkflowSession, openWorkspaceEditor, selectStrategy, setDecisionId],
+  );
+
+  useEffect(() => {
+    if (!queuedRerunStrategyId || appStage !== "workspace" || activeTab !== "editor") {
+      return;
+    }
+    if (!selectedStrategy || selectedStrategy.id !== queuedRerunStrategyId || isRunning) {
+      return;
+    }
+    handleRunClick();
+    setQueuedRerunStrategyId(null);
+  }, [activeTab, appStage, handleRunClick, isRunning, queuedRerunStrategyId, selectedStrategy]);
+
   const {
     strategyListProps,
     strategyDetailsProps,
@@ -224,8 +294,13 @@ export function useBoardroomHomeController({
       isLoading: isLoadingStrategies,
       error: strategyLoadError,
       selectedStrategyId,
+      workflowRunHistoryByDecision,
       onSelect: handleStrategySelect,
       onCreate: openCreateStrategyForm,
+      onOpenReport: openReportFromStrategy,
+      onOpenForge: openForgeFromStrategy,
+      onOpenRunHistory: openRunHistoryFromStrategy,
+      onRerunPipeline: rerunStrategyFromGallery,
     },
     details: {
       selectedStrategy,
@@ -261,6 +336,7 @@ export function useBoardroomHomeController({
       onUpdateCapitalAllocation: updateCapitalAllocation,
       onUpdateRiskProperty: updateRiskProperty,
       onUpdateSection: updateCreateSection,
+      onLogMitigation: upsertMitigation,
       onRunAnalysis: enterWorkflowFromStrategy,
       onCancel: cancelCreateStrategy,
       onSave: saveCreatedStrategy,

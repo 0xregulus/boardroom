@@ -11,13 +11,25 @@ interface UseWorkflowRunHistoryResult {
   invalidateAllRunHistory: () => void;
 }
 
-export function useWorkflowRunHistory(selectedStrategyId: string | null): UseWorkflowRunHistoryResult {
+interface UseWorkflowRunHistoryParams {
+  selectedStrategyId: string | null;
+  preloadDecisionIds?: string[];
+  preloadLimit?: number;
+}
+
+export function useWorkflowRunHistory({
+  selectedStrategyId,
+  preloadDecisionIds = [],
+  preloadLimit = 1,
+}: UseWorkflowRunHistoryParams): UseWorkflowRunHistoryResult {
   const [workflowRunHistoryByDecision, setWorkflowRunHistoryByDecision] = useState<Record<string, WorkflowRunStateEntry[]>>({});
   const [workflowRunHistoryLoadingByDecision, setWorkflowRunHistoryLoadingByDecision] = useState<Record<string, boolean>>({});
   const [workflowRunHistoryErrorByDecision, setWorkflowRunHistoryErrorByDecision] = useState<Record<string, string | null>>({});
+  const [workflowRunHistoryLimitByDecision, setWorkflowRunHistoryLimitByDecision] = useState<Record<string, number>>({});
   const [refreshVersion, setRefreshVersion] = useState(0);
   const workflowRunHistoryByDecisionRef = useRef(workflowRunHistoryByDecision);
   const workflowRunHistoryLoadingByDecisionRef = useRef(workflowRunHistoryLoadingByDecision);
+  const workflowRunHistoryLimitByDecisionRef = useRef(workflowRunHistoryLimitByDecision);
 
   useEffect(() => {
     workflowRunHistoryByDecisionRef.current = workflowRunHistoryByDecision;
@@ -26,6 +38,10 @@ export function useWorkflowRunHistory(selectedStrategyId: string | null): UseWor
   useEffect(() => {
     workflowRunHistoryLoadingByDecisionRef.current = workflowRunHistoryLoadingByDecision;
   }, [workflowRunHistoryLoadingByDecision]);
+
+  useEffect(() => {
+    workflowRunHistoryLimitByDecisionRef.current = workflowRunHistoryLimitByDecision;
+  }, [workflowRunHistoryLimitByDecision]);
 
   const invalidateDecisionRunHistory = useCallback((decisionId: string) => {
     const normalizedDecisionId = decisionId.trim();
@@ -57,6 +73,14 @@ export function useWorkflowRunHistory(selectedStrategyId: string | null): UseWor
       delete next[normalizedDecisionId];
       return next;
     });
+    setWorkflowRunHistoryLimitByDecision((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, normalizedDecisionId)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[normalizedDecisionId];
+      return next;
+    });
     setRefreshVersion((value) => value + 1);
   }, []);
 
@@ -64,44 +88,44 @@ export function useWorkflowRunHistory(selectedStrategyId: string | null): UseWor
     setWorkflowRunHistoryByDecision({});
     setWorkflowRunHistoryLoadingByDecision({});
     setWorkflowRunHistoryErrorByDecision({});
+    setWorkflowRunHistoryLimitByDecision({});
     setRefreshVersion((value) => value + 1);
   }, []);
 
-  useEffect(() => {
-    if (!selectedStrategyId) {
-      return;
-    }
+  const loadWorkflowRunHistoryForDecision = useCallback(
+    async (decisionIdForHistory: string, limit: number, abortSignal?: AbortSignal): Promise<void> => {
+      const normalizedLimit = Math.max(1, Math.min(100, Math.round(limit)));
+      const storedLimit = workflowRunHistoryLimitByDecisionRef.current[decisionIdForHistory] ?? 0;
 
-    const decisionIdForHistory = selectedStrategyId;
+      if (
+        storedLimit >= normalizedLimit &&
+        Object.prototype.hasOwnProperty.call(workflowRunHistoryByDecisionRef.current, decisionIdForHistory)
+      ) {
+        return;
+      }
 
-    if (Object.prototype.hasOwnProperty.call(workflowRunHistoryByDecisionRef.current, decisionIdForHistory)) {
-      return;
-    }
+      if (workflowRunHistoryLoadingByDecisionRef.current[decisionIdForHistory]) {
+        return;
+      }
 
-    if (workflowRunHistoryLoadingByDecisionRef.current[decisionIdForHistory]) {
-      return;
-    }
-
-    const abortController = new AbortController();
-    let cancelled = false;
-
-    async function loadWorkflowRunHistory(): Promise<void> {
       setWorkflowRunHistoryLoadingByDecision((prev) => ({ ...prev, [decisionIdForHistory]: true }));
       setWorkflowRunHistoryErrorByDecision((prev) => ({ ...prev, [decisionIdForHistory]: null }));
 
       try {
-        const response = await fetch(`/api/workflow/runs?decisionId=${encodeURIComponent(decisionIdForHistory)}&limit=20`, {
+        const response = await fetch(`/api/workflow/runs?decisionId=${encodeURIComponent(decisionIdForHistory)}&limit=${normalizedLimit}`, {
           cache: "no-store",
-          signal: abortController.signal,
+          signal: abortSignal,
         });
 
         if (response.status === 304) {
-          if (!cancelled) {
-            setWorkflowRunHistoryByDecision((prev) => ({
-              ...prev,
-              [decisionIdForHistory]: prev[decisionIdForHistory] ?? [],
-            }));
-          }
+          setWorkflowRunHistoryByDecision((prev) => ({
+            ...prev,
+            [decisionIdForHistory]: prev[decisionIdForHistory] ?? [],
+          }));
+          setWorkflowRunHistoryLimitByDecision((prev) => ({
+            ...prev,
+            [decisionIdForHistory]: Math.max(prev[decisionIdForHistory] ?? 0, normalizedLimit),
+          }));
           return;
         }
 
@@ -129,20 +153,18 @@ export function useWorkflowRunHistory(selectedStrategyId: string | null): UseWor
           } satisfies WorkflowRunStateEntry;
         });
 
-        if (cancelled) {
-          return;
-        }
-
         setWorkflowRunHistoryByDecision((prev) => ({
           ...prev,
           [decisionIdForHistory]: normalizedRuns,
         }));
+        setWorkflowRunHistoryLimitByDecision((prev) => ({
+          ...prev,
+          [decisionIdForHistory]: Math.max(prev[decisionIdForHistory] ?? 0, normalizedLimit),
+        }));
       } catch (historyError) {
-        if (historyError instanceof DOMException && historyError.name === "AbortError") {
-          return;
-        }
-
-        if (cancelled) {
+        const errorName = (historyError as any)?.name;
+        const errorMessage = (historyError as any)?.message?.toLowerCase() || "";
+        if (errorName === "AbortError" || errorMessage.includes("aborted")) {
           return;
         }
 
@@ -152,15 +174,55 @@ export function useWorkflowRunHistory(selectedStrategyId: string | null): UseWor
       } finally {
         setWorkflowRunHistoryLoadingByDecision((prev) => ({ ...prev, [decisionIdForHistory]: false }));
       }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!selectedStrategyId) {
+      return;
     }
 
-    loadWorkflowRunHistory();
+    const decisionIdForHistory = selectedStrategyId;
+    const abortController = new AbortController();
+    loadWorkflowRunHistoryForDecision(decisionIdForHistory, 20, abortController.signal);
+
+    return () => {
+      abortController.abort();
+    };
+  }, [loadWorkflowRunHistoryForDecision, refreshVersion, selectedStrategyId]);
+
+  useEffect(() => {
+    if (preloadDecisionIds.length === 0) {
+      return;
+    }
+
+    const preloadQueue = [...new Set(preloadDecisionIds.map((entry) => entry.trim()).filter((entry) => entry.length > 0))]
+      .slice(0, 120);
+    if (preloadQueue.length === 0) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    let cancelled = false;
+
+    async function warmHistory(): Promise<void> {
+      for (const decisionId of preloadQueue) {
+        if (cancelled) {
+          return;
+        }
+        // Warm card-level summaries with minimal payload.
+        await loadWorkflowRunHistoryForDecision(decisionId, preloadLimit, abortController.signal);
+      }
+    }
+
+    void warmHistory();
 
     return () => {
       cancelled = true;
       abortController.abort();
     };
-  }, [refreshVersion, selectedStrategyId]);
+  }, [loadWorkflowRunHistoryForDecision, preloadDecisionIds, preloadLimit, refreshVersion]);
 
   return {
     workflowRunHistoryByDecision,

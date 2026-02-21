@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import type { DecisionStrategy } from "../types";
 import { useCreateDraft } from "./useCreateDraft";
@@ -18,13 +18,18 @@ export function useBoardroomStrategyController() {
   } = useSelectedStrategy({
     strategies,
   });
+  const strategyIdsForPortfolio = useMemo(() => strategies.map((entry) => entry.id), [strategies]);
   const {
     workflowRunHistoryByDecision,
     workflowRunHistoryLoadingByDecision,
     workflowRunHistoryErrorByDecision,
     invalidateDecisionRunHistory,
     invalidateAllRunHistory,
-  } = useWorkflowRunHistory(selectedStrategyId);
+  } = useWorkflowRunHistory({
+    selectedStrategyId,
+    preloadDecisionIds: strategyIdsForPortfolio,
+    preloadLimit: 8,
+  });
 
   const prependStrategyAndSelect = useCallback((strategy: DecisionStrategy): void => {
     setStrategies((prev) => [strategy, ...prev]);

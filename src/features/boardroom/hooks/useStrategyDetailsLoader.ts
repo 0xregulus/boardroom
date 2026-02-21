@@ -14,6 +14,7 @@ interface UseStrategyDetailsLoaderParams {
 interface UseStrategyDetailsLoaderResult {
   isLoadingStrategyDetails: boolean;
   openSelectedStrategyDetails: () => void;
+  openStrategyDetailsFor: (strategy: DecisionStrategy) => void;
   resetStrategyDetailsLoading: () => void;
 }
 
@@ -27,12 +28,12 @@ export function useStrategyDetailsLoader({
 }: UseStrategyDetailsLoaderParams): UseStrategyDetailsLoaderResult {
   const [isLoadingStrategyDetails, setIsLoadingStrategyDetails] = useState(false);
 
-  const openSelectedStrategyDetails = useCallback((): void => {
-    if (!selectedStrategy || isLoadingStrategyDetails) {
+  const openStrategyDetailsFor = useCallback((strategy: DecisionStrategy): void => {
+    if (isLoadingStrategyDetails) {
       return;
     }
 
-    const selectedAtClick = selectedStrategy;
+    const selectedAtClick = strategy;
     const selectedId = selectedAtClick.id;
 
     openStrategyDetails(selectedAtClick);
@@ -65,10 +66,16 @@ export function useStrategyDetailsLoader({
     openCreateStage,
     openStrategyDetails,
     replaceDraftFromStrategy,
-    selectedStrategy,
     setDecisionId,
     upsertStrategy,
   ]);
+
+  const openSelectedStrategyDetails = useCallback((): void => {
+    if (!selectedStrategy) {
+      return;
+    }
+    openStrategyDetailsFor(selectedStrategy);
+  }, [openStrategyDetailsFor, selectedStrategy]);
 
   const resetStrategyDetailsLoading = useCallback(() => {
     setIsLoadingStrategyDetails(false);
@@ -77,6 +84,7 @@ export function useStrategyDetailsLoader({
   return {
     isLoadingStrategyDetails,
     openSelectedStrategyDetails,
+    openStrategyDetailsFor,
     resetStrategyDetailsLoading,
   };
 }
