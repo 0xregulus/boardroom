@@ -87,6 +87,82 @@ async function deleteWorkflowRunsForDecision(decisionId: string): Promise<void> 
   await getScriptPool().query("DELETE FROM workflow_runs WHERE decision_id = $1", [decisionId]);
 }
 
+function asObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
+function buildDecisionSnapshotProperties(decision: SeedDecision): Record<string, unknown> {
+  const properties: Record<string, unknown> = {
+    "Decision Name": decision.name,
+    Status: decision.status,
+    Owner: decision.owner,
+    "Review Date": decision.reviewDate,
+    "Executive Summary": decision.summary,
+    "Primary KPI": decision.primaryKpi,
+    "Investment Required": decision.investmentRequired,
+    "Strategic Objective": decision.strategicObjective,
+    "Confidence Level": decision.confidence,
+    Baseline: decision.baseline,
+    Target: decision.target,
+    "Time Horizon": decision.timeHorizon,
+    "Probability of Success": decision.probabilityOfSuccess,
+    "Strategic Leverage Score": decision.leverageScore,
+    "Risk-Adjusted ROI": decision.riskAdjustedRoi,
+    "12-Month Gross Benefit": decision.benefit12mGross,
+    "Decision Type": decision.decisionType,
+    Mitigations: decision.mitigations ?? [],
+  };
+
+  for (const [gateName, checked] of Object.entries(decision.governanceChecks)) {
+    properties[gateName] = checked;
+  }
+
+  return properties;
+}
+
+function buildSeedWorkflowState(decision: SeedDecision): Record<string, unknown> {
+  const outputs = decision.outputs;
+  if (!outputs) {
+    return {};
+  }
+
+  const workflowState = asObject(outputs.workflowRun.state);
+
+  return {
+    ...workflowState,
+    decision_id: decision.id,
+    decision_name: decision.name,
+    status: outputs.workflowRun.workflowStatus,
+    dqs: outputs.workflowRun.dqs,
+    missing_sections: toStringArray(workflowState.missing_sections),
+    decision_snapshot: {
+      page_id: decision.id,
+      captured_at: decision.reviewDate,
+      properties: buildDecisionSnapshotProperties(decision),
+      section_excerpt: [],
+      computed: {
+        inferred_governance_checks: decision.governanceChecks,
+        autochecked_governance_fields: [],
+      },
+    },
+    reviews: outputs.reviews,
+    synthesis: outputs.synthesis,
+    prd: outputs.prd,
+  };
+}
+
 async function seedOneDecision(decision: SeedDecision): Promise<void> {
   await upsertDecisionRecord({
     id: decision.id,
@@ -107,6 +183,7 @@ async function seedOneDecision(decision: SeedDecision): Promise<void> {
     riskAdjustedRoi: decision.riskAdjustedRoi,
     benefit12mGross: decision.benefit12mGross,
     decisionType: decision.decisionType,
+    mitigations: decision.mitigations ?? [],
     detailsUrl: decision.detailsUrl,
     createdAt: decision.reviewDate,
   });
@@ -130,7 +207,7 @@ async function seedOneDecision(decision: SeedDecision): Promise<void> {
     decision.outputs.workflowRun.dqs,
     decision.outputs.workflowRun.gateDecision,
     decision.outputs.workflowRun.workflowStatus,
-    decision.outputs.workflowRun.state,
+    buildSeedWorkflowState(decision),
   );
 }
 

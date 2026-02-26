@@ -177,7 +177,7 @@ export function SocraticSidebar({
           <h3>Active Socratic Inquiry</h3>
           <p>&ldquo;{activeInquiry}&rdquo;</p>
           <button type="button" onClick={onResearchActiveInquiry} disabled={!onResearchActiveInquiry}>
-            Research via Tavily
+            Research
           </button>
         </section>
       ) : null}

@@ -1,4 +1,4 @@
-import { isSimulationModeEnabled } from "../simulation/mode";
+import { withOfflineFallback } from "../offline/mode";
 
 export type ResearchProvider = "Tavily" | "Jina" | "Perplexity";
 
@@ -59,11 +59,12 @@ export function researchProviderApiKeyEnv(provider: ResearchProvider): string {
 }
 
 export function researchProviderEnabled(provider: ResearchProvider, env: NodeJS.ProcessEnv | undefined = process.env): boolean {
-  if (isSimulationModeEnabled(env)) {
-    return true;
-  }
-
-  return envValue(env, researchProviderApiKeyEnv(provider)).length > 0;
+  const apiKey = withOfflineFallback(
+    envValue(env, researchProviderApiKeyEnv(provider)),
+    `offline-${provider.toLowerCase()}-key`,
+    env,
+  );
+  return apiKey.length > 0;
 }
 
 export function listResearchProviderOptions(env: NodeJS.ProcessEnv | undefined = process.env): ResearchProviderOption[] {

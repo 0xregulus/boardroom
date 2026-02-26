@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-export type PulseClassification = "high-friction" | "pending-mitigation" | "smooth-approval";
+export type PulseClassification = "high-friction" | "pending-mitigation" | "smooth-approval" | "unclassified";
 interface DecisionPulseProps {
   dqs: number;
   agentInfluence: number[];
@@ -62,6 +62,9 @@ function getPalette(
   if (classification === "smooth-approval") {
     return { core: "#34d399", mid: "#10b981", edge: "#059669", glow: "rgba(16, 185, 129, 0.36)" };
   }
+  if (classification === "unclassified") {
+    return { core: "#94a3b8", mid: "#64748b", edge: "#475569", glow: "rgba(100,116,139,0.25)" };
+  }
 
   // Fallback to legacy DQS-driven logic
   if (dqs >= 70) {
@@ -94,6 +97,11 @@ export function DecisionPulse({
   freezeMode = false,
   previousRunPoints,
 }: DecisionPulseProps) {
+  const instanceId = useId().replace(/:/g, "");
+  const gradientId = `pulse-nucleus-gradient-${instanceId}`;
+  const glowId = `pulse-nucleus-glow-${instanceId}`;
+  const shadowId = `pulse-nucleus-shadow-${instanceId}`;
+  const auraId = `pulse-nucleus-aura-${instanceId}`;
   const [time, setTime] = useState(0);
   const smoothedXRef = useRef<number[]>(Array.from({ length: POINTS }, (_, i) => CENTER + Math.cos((i / POINTS) * Math.PI * 2 - Math.PI / 2) * BASE_RADIUS));
   const smoothedYRef = useRef<number[]>(Array.from({ length: POINTS }, (_, i) => CENTER + Math.sin((i / POINTS) * Math.PI * 2 - Math.PI / 2) * BASE_RADIUS));
@@ -274,19 +282,19 @@ export function DecisionPulse({
     <div className="pulse-core-three-shell" aria-hidden="true">
       <svg viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`} width="100%" height="100%">
         <defs>
-          <radialGradient id="pulse-nucleus-gradient" cx="50%" cy="42%" r="64%">
+          <radialGradient id={gradientId} cx="50%" cy="42%" r="64%">
             <stop offset="0%" stopColor={palette.core} stopOpacity="0.95" />
             <stop offset="58%" stopColor={palette.mid} stopOpacity="0.72" />
             <stop offset="100%" stopColor={palette.edge} stopOpacity="0.86" />
           </radialGradient>
-          <radialGradient id="pulse-nucleus-glow" cx="50%" cy="50%" r="62%">
+          <radialGradient id={glowId} cx="50%" cy="50%" r="62%">
             <stop offset="0%" stopColor={palette.glow} stopOpacity="0.6" />
             <stop offset="100%" stopColor={palette.glow} stopOpacity="0" />
           </radialGradient>
-          <filter id="pulse-nucleus-shadow" x="-60%" y="-60%" width="220%" height="220%">
+          <filter id={shadowId} x="-60%" y="-60%" width="220%" height="220%">
             <feDropShadow dx="0" dy="12" stdDeviation="10" floodColor="rgba(15,23,42,0.24)" />
           </filter>
-          <filter id="pulse-nucleus-aura" x="-80%" y="-80%" width="260%" height="260%">
+          <filter id={auraId} x="-80%" y="-80%" width="260%" height="260%">
             {runtimeActive ? (
               <>
                 <feGaussianBlur in="SourceGraphic" stdDeviation={1.2 + conflict * 0.8} result="blur" />
@@ -318,7 +326,7 @@ export function DecisionPulse({
           </filter>
         </defs>
 
-        <circle cx={CENTER} cy={CENTER + 16} r={86 + conflict * 30} fill="url(#pulse-nucleus-glow)" />
+        <circle cx={CENTER} cy={CENTER + 16} r={86 + conflict * 30} fill={`url(#${glowId})`} />
 
         {ghostPathData ? (
           <path
@@ -333,17 +341,17 @@ export function DecisionPulse({
         {runtimeActive ? (
           <path
             d={pathData}
-            fill="url(#pulse-nucleus-gradient)"
+            fill={`url(#${gradientId})`}
             opacity={socraticMode ? 0.42 + socraticReadiness * 0.42 : 0.5 + conflict * 0.35}
-            filter="url(#pulse-nucleus-aura)"
+            filter={`url(#${auraId})`}
           />
         ) : null}
         <path
           d={pathData}
-          fill="url(#pulse-nucleus-gradient)"
+          fill={`url(#${gradientId})`}
           stroke={palette.edge}
           strokeWidth={2.2 + (socraticMode ? socraticReadiness * 0.55 : 0)}
-          filter="url(#pulse-nucleus-shadow)"
+          filter={`url(#${shadowId})`}
         />
 
         {facetPolygons.map((facet, index) => (

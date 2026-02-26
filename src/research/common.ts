@@ -1,4 +1,5 @@
 import { sanitizeForExternalUse } from "../security/redaction";
+import { withOfflineFallback } from "../offline/mode";
 
 const MAX_CONTEXT_LENGTH = 700;
 const MAX_SNIPPET_LENGTH = 280;
@@ -162,8 +163,8 @@ export function parseAllowedHosts(): Set<string> {
 }
 
 export function requireAllowedHosts(): boolean {
-  const primary = (process.env.RESEARCH_REQUIRE_ALLOWED_HOSTS ?? "").trim().toLowerCase();
-  const fallback = (process.env.TAVILY_REQUIRE_ALLOWED_HOSTS ?? "").trim().toLowerCase();
+  const primary = withOfflineFallback(process.env.RESEARCH_REQUIRE_ALLOWED_HOSTS, "false").trim().toLowerCase();
+  const fallback = withOfflineFallback(process.env.TAVILY_REQUIRE_ALLOWED_HOSTS, "false").trim().toLowerCase();
   const configured = primary.length > 0 ? primary : fallback;
 
   if (configured === "false") {

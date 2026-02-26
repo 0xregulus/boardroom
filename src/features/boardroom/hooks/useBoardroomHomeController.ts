@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ResearchProvider, ResearchProviderOption } from "../../../research/providers";
+import type { LLMProviderOption } from "../../../config/llm_providers";
 import type { DecisionStrategy } from "../types";
 import { useAgentConfigs } from "./useAgentConfigs";
 import { useBoardroomActions } from "./useBoardroomActions";
@@ -14,11 +15,13 @@ import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
 interface UseBoardroomHomeControllerParams {
   researchToolOptions: ResearchProviderOption[];
   defaultResearchProvider: ResearchProvider;
+  llmProviderOptions: LLMProviderOption[];
 }
 
 export function useBoardroomHomeController({
   researchToolOptions,
   defaultResearchProvider,
+  llmProviderOptions,
 }: UseBoardroomHomeControllerParams) {
   const {
     appStage,
@@ -290,6 +293,7 @@ export function useBoardroomHomeController({
     workflowPreviewStageProps,
   } = useBoardroomStageProps({
     strategyList: {
+      agentConfigs,
       strategies,
       isLoading: isLoadingStrategies,
       error: strategyLoadError,
@@ -346,6 +350,7 @@ export function useBoardroomHomeController({
       selectedAgentId,
       researchProvider,
       researchOptions: researchToolOptions,
+      llmProviderOptions,
       onSelectAgent: setSelectedAgentId,
       onAddAgent: addCustomReviewAgent,
       onRemoveAgent: removeAgentById,

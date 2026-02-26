@@ -1,115 +1,69 @@
-# Boardroom Architecture (Next.js + PostgreSQL)
+# Architectural Integrity & Governance Math
 
-## Core Flow
+Boardroom is designed as a governance protocol, not a chat surface. This document defines the integrity mechanics behind scoring, adjudication, and visual truthfulness.
 
+## 1. The Vector-Based Nucleus
+Boardroom's DecisionPulse2D is computed using **weighted vector displacement**.
 
-1. `build_decision`
-```mermaid
-sequenceDiagram
-    participant ID as Ingestion / DB
-    participant WF as Workflow Engine
-    participant AG as Agents (CEO, CFO, CTO)
-    participant CH as Chairperson
-    participant DB as Postgres
+- Each vertex starts from a base radial shell.
+- For each agent, displacement is added toward that agent's anchor vector.
+- The displacement strength is proportional to:
+  - agent influence weight,
+  - angular cosine proximity,
+  - runtime state (active, settling, stable).
 
-    ID->>WF: Load Decision & Docs
-    WF->>WF: Infer Governance Gates
-    WF->>AG: Executive Review (Parallel)
-    AG-->>WF: Individual Reviews
-    
-    loop Interaction Rounds (Optional)
-        WF->>AG: Rebuttal / Refinement
-        AG-->>WF: Updated Reviews
-    end
+### Why this matters
+- Prevents generic radial bulging and groupthink-looking geometry.
+- Preserves localized influence from dissenting agents.
+- Produces a physically interpretable governance signal.
 
-    WF->>CH: Synthesize Reviews
-    CH-->>WF: Executive Summary & Recommendation
-    
-    WF->>WF: Compute DQS & Gate Decision
-    
-    alt Approved
-        WF->>WF: Generate PRD
-    else Challenged/Blocked
-        WF->>WF: Skip PRD
-    end
-    
-    WF->>DB: Persist Reviews, Synthesis, Run History
-```
-- Fetch decision metadata + body text from PostgreSQL (`decisions`, `decision_documents`).
-- Infer governance gates from text.
-- Auto-mark inferred governance checks in `decision_governance_checks`.
-- Retrieve top similar prior decisions + outcomes via vector-memory similarity from `decision_ancestry_embeddings` (with lexical fallback).
-- Compute automated hygiene checks (financial consistency + metadata/document coherence), including structured table parsing for projected-revenue vs market-size sanity checks.
-- Move decision status to `Under Evaluation` or `Incomplete`.
+## 2. DQS and Adversarial Weighting
+The Decision Quality Score (DQS) is a weighted, penalty-adjusted governance score.
 
-2. `executive_review`
-- Run normalized review-agent configs (core agents plus optional custom reviewers).
-- Agent runtime config (provider/model/system/user/temperature/max tokens) comes from `agent_configs`, with defaults when no persisted config exists.
-- Each agent uses its configured provider client (`OpenAI`, `Anthropic`, `Mistral`, `Meta`).
-- Prompt templates are configurable per agent; typed prompt definitions in `src/prompts/registry.ts` are the runtime source of truth.
-- When `TAVILY_API_KEY` is configured and `includeExternalResearch` is `true` (default `false`), each review agent runs a Tavily search and receives recent external evidence with source URLs in prompt context.
-- Remote workflow runs can require explicit approval via `x-boardroom-run-approval` depending on policy env vars.
-- Bulk run execution is capped by `BOARDROOM_MAX_BULK_RUN_DECISIONS`.
-- LLM output is parsed via JSON fallback extraction and validated with Zod.
+### Core weighting
+- `CEO = 0.30`
+- `CFO = 0.25`
+- `CTO = 0.25`
+- `Compliance = 0.20`
+- Additional custom agents use `0.20` each.
 
-3. `interaction_rounds`
-- Optional cross-agent rebuttal loop (default `1`, configurable `0..3` per run).
-- Each reviewer re-evaluates with peer-review summaries + its own prior output.
-- Workflow stores round-level deltas (`score_delta` and `blocked` flips) in `state_json`.
+### Adversarial correction
+- Risk-weighted dissent (especially CFO/Compliance) carries stronger penalty.
+- Low specialized confidence introduces an explicit confidence penalty.
+- Final DQS blends substance and hygiene (`substance 75%`, `hygiene 25%`).
 
-4. `synthesize_reviews`
-- Chairperson agent produces executive summary and final recommendation.
-- Weighted conflict resolution gives stronger effect to risk/compliance dissent than growth optimism.
-- Chairperson output is required to include evidence citations sourced from reviewer theses/blockers/revisions.
+### Gate outcomes
+- `Blocked`: any hard blocker remains.
+- `Challenged`: guardrails fail or DQS is below threshold.
+- `Approved`: strategic, hygiene, and confidence thresholds hold.
 
-5. `calculate_dqs`
-- DQS starts from a weighted mean over configured review agents:
-  - core weights: `CEO=0.30`, `CFO=0.25`, `CTO=0.25`, `Compliance=0.20`
-  - each additional custom reviewer uses weight `0.20`
-  - `DQS = SUM(score_i * weight_i) / SUM(weight_i)`
-- Then applies weighted conflict adjustments:
-  - dissent penalties (CFO/Compliance dissent weighted highest)
-  - confidence penalties (low specialized-agent confidence)
-  - hygiene blend (automated hygiene score contributes to final DQS)
+## 3. The Semantic Mitigation Gate
+Boardroom enforces a **Semantic Substance Validator** to prevent logic gaming.
 
-6. gate decision
-- `Blocked` if any review blocks.
-- `Challenged` if hygiene/confidence guardrails fail or `DQS < 7.0`.
-- `Approved` otherwise.
+- Mitigations are evaluated by an LLM referee returning:
+  - `substanceScore` (`0..1`)
+  - `approved` (`boolean`)
+  - `feedback` (`string`)
+- Practical acceptance threshold is **0.7**.
+- Superficial numeric claims are insufficient without explicit causal controls and executable steps.
 
-7. `generate_prd` (approved only)
-- Build structured PRD sections from decision text + review feedback.
+Endpoint: `POST /api/socratic/validate-substance`
 
-8. `persist_artifacts`
-- Upsert executive reviews in `decision_reviews`.
-- Upsert chairperson synthesis in `decision_synthesis`.
-- Upsert PRD in `decision_prds` when approved.
-- Append run record in `workflow_runs`.
+## 4. Persistence, Replay, and Strategic Delta
+Governance output is persisted in PostgreSQL at run time.
 
-## Runtime Surfaces
+- `workflow_runs`: immutable run snapshots and state.
+- `decision_reviews`: per-agent judgments and blocker logic.
+- `decision_synthesis`: chairperson synthesis.
+- `decision_prds`: implementation artifact for approved decisions.
+- `decision_ancestry_embeddings`: historical memory for strategic retrieval.
 
-- Web UI: `/`
-- Workflow Editor: full-page execution monitor with Decision Pulse canvas, persistent control aside, and unified Execution Trace.
-- Report: Live Governance Briefing (Outcome -> Scorecard -> Debate/Evidence -> Artifacts) in a three-column layout.
-- API: `POST /api/workflow/run`
-- API: `GET /api/workflow/runs` (decision run history)
-- API: `GET /api/strategies`
-- API: `GET /api/strategies/:decisionId`
-- API: `GET|PUT /api/agent-configs`
-- API: `GET /api/health`
+Boardroom also computes **mitigation velocity** so teams can measure risk-to-resolution behavior over time.
 
-## Main Code
+## 5. Executive Integrity Principle
+Boardroom's architecture is built so visuals, scores, and gates all tell the same truth:
 
-- `src/workflow/decision_workflow.ts` orchestration
-- `src/config/agent_config.ts` normalized/persisted agent config model
-- `src/config/llm_providers.ts` provider/model/env-key registry
-- `src/llm/client.ts` provider client implementations
-- `src/agents/base.ts` agent execution + parsing
-- `src/prompts/registry.ts` typed prompt registry (system/user templates + versions)
-- `src/workflow/prd.ts` PRD synthesis helpers
-- `src/workflow/gates.ts` governance checks
-- `src/store/postgres.ts` PostgreSQL schema + repository functions
-
-## Legacy Archive
-
-- No archived legacy implementation directory is currently tracked in this repository root.
+- visual deformation mirrors reviewer influence,
+- mathematical scoring reflects adversarial friction,
+- semantic validation blocks non-substantive mitigation,
+- persistence preserves auditability and institutional memory.

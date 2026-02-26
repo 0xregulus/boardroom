@@ -177,10 +177,10 @@ describe("ProviderClientRegistry", () => {
     expect(() => registry.getClient("Mistral")).toThrow("Mistral API key is required");
   });
 
-  it("returns simulated responses when simulation mode is enabled without calling provider APIs", async () => {
-    process.env.BOARDROOM_SIMULATION_MODE = "true";
-    process.env.BOARDROOM_SIMULATION_MIN_DELAY_MS = "0";
-    process.env.BOARDROOM_SIMULATION_MAX_DELAY_MS = "0";
+  it("returns synthetic responses when offline mode is enabled without external network calls", async () => {
+    process.env.BOARDROOM_OFFLINE_MODE = "true";
+    process.env.BOARDROOM_OFFLINE_MIN_DELAY_MS = "0";
+    process.env.BOARDROOM_OFFLINE_MAX_DELAY_MS = "0";
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.MISTRAL_API_KEY;
@@ -205,7 +205,7 @@ describe("ProviderClientRegistry", () => {
     const parsed = JSON.parse(result) as { score?: number; governance_checks_met?: Record<string, boolean> };
     expect(typeof parsed.score).toBe("number");
     expect(parsed.governance_checks_met).toBeTypeOf("object");
-    expect(mocks.openaiCreate).not.toHaveBeenCalled();
+    expect(mocks.openaiCreate).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

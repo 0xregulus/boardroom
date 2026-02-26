@@ -980,6 +980,14 @@
     font-size: 11px;
   }
 
+  .report-v3-gauge.compact .report-v3-gauge-value strong {
+    font-size: clamp(30px, 8.5vw, 38px);
+  }
+
+  .report-v3-gauge.compact .report-v3-gauge-value span {
+    font-size: 10px;
+  }
+
   .report-v3-consensus h3 {
     font-size: clamp(20px, 6.6vw, 28px);
   }

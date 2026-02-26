@@ -81,9 +81,9 @@ export function useWorkflowRun({
 
   const runLabel = useMemo(() => {
     if (isRunning || isStreamRunning) {
-      return "Running Pipeline...";
+      return "Running Analysis...";
     }
-    return "Execute Pipeline";
+    return "Execute Analysis";
   }, [isRunning, isStreamRunning]);
 
   const effectiveReviewRoleLabels = useMemo(() => {
@@ -295,7 +295,7 @@ export function useWorkflowRun({
         ? `Strategy selected: ${selectedStrategy.name} (${selectedDecisionId})`
         : selectedDecisionId.length > 0
           ? `Decision selected: ${selectedDecisionId}`
-        : "No decision ID provided, running all Proposed decisions";
+          : "No decision ID provided, running all Proposed decisions";
 
     const handleExecutionTrace = (entry: WorkflowStreamTraceEvent): void => {
       const normalizedMessage = entry.message.trim();

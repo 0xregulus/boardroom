@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType } from "react";
 
 import { EditGlyph, FileTextGlyph, RefreshGlyph } from "./icons";
 
@@ -11,13 +11,13 @@ interface GalleryActionOverlayProps {
 interface GalleryActionConfig {
   key: GalleryAction;
   label: string;
-  icon: ReactNode;
+  icon: ComponentType;
 }
 
 const ACTIONS: GalleryActionConfig[] = [
-  { key: "REPORT", label: "View Artifact", icon: <FileTextGlyph /> },
-  { key: "EDIT", label: "Open Forge", icon: <EditGlyph /> },
-  { key: "RERUN", label: "Re-Run Pipeline", icon: <RefreshGlyph /> },
+  { key: "REPORT", label: "View Report", icon: FileTextGlyph },
+  { key: "EDIT", label: "Open Artifact", icon: EditGlyph },
+  { key: "RERUN", label: "Re-Run Analysis", icon: RefreshGlyph },
 ];
 
 export function GalleryActionOverlay({ onAction }: GalleryActionOverlayProps) {
@@ -35,7 +35,7 @@ export function GalleryActionOverlay({ onAction }: GalleryActionOverlayProps) {
             }}
           >
             <span className="gallery-action-icon" aria-hidden="true">
-              {action.icon}
+              <action.icon />
             </span>
             <span>{action.label}</span>
           </button>

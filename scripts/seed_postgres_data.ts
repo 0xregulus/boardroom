@@ -11,7 +11,7 @@ interface SeedOutputs {
     dqs: number;
     gateDecision: string;
     workflowStatus: string;
-    state: Record<string, unknown>;
+    state?: Record<string, unknown>;
   };
 }
 
@@ -34,6 +34,7 @@ export interface SeedDecision {
   riskAdjustedRoi: number;
   benefit12mGross: number;
   decisionType: string;
+  mitigations?: string[];
   detailsUrl: string;
   bodyText: string;
   governanceChecks: Record<string, boolean>;
@@ -152,7 +153,7 @@ ${finalDecision}
 8. Kill Criteria
 ${killCriteria}
 
-10. Compliance & Monitoring
+9. Compliance & Monitoring
 ${compliance}
 `.trim();
 }
@@ -177,6 +178,10 @@ export const SEED_DECISIONS: SeedDecision[] = [
     riskAdjustedRoi: 2.1,
     benefit12mGross: 420000,
     decisionType: "Growth Initiative",
+    mitigations: [
+      "Roll out wallets by cohort with conversion and fraud guardrails.",
+      "Fallback to legacy checkout if payment success rate drops below threshold.",
+    ],
     detailsUrl: "https://example.com/decisions/mobile-checkout",
     bodyText: bodyTextForScenario(
       "Lift mobile checkout conversion by reducing payment friction in high-intent sessions.",
@@ -211,6 +216,10 @@ export const SEED_DECISIONS: SeedDecision[] = [
     riskAdjustedRoi: 1.5,
     benefit12mGross: 520000,
     decisionType: "Operations Program",
+    mitigations: [
+      "Use carrier failover rules with automatic exception routing.",
+      "Throttle automation during peak windows until SLA stability is proven.",
+    ],
     detailsUrl: "https://example.com/decisions/fulfillment-routing",
     bodyText: bodyTextForScenario(
       "Reduce delivery variance using rule-based routing and carrier fallback logic.",
@@ -245,6 +254,10 @@ export const SEED_DECISIONS: SeedDecision[] = [
     riskAdjustedRoi: 1.9,
     benefit12mGross: 390000,
     decisionType: "AI Enablement",
+    mitigations: [
+      "Require human-in-the-loop approval for high-risk policy categories.",
+      "Daily QA sampling with rollback triggers for policy drift.",
+    ],
     detailsUrl: "https://example.com/decisions/support-copilot",
     bodyText: bodyTextForScenario(
       "Accelerate support throughput and quality with guided response suggestions.",
@@ -279,6 +292,10 @@ export const SEED_DECISIONS: SeedDecision[] = [
     riskAdjustedRoi: 2.7,
     benefit12mGross: 460000,
     decisionType: "AI Enablement",
+    mitigations: [
+      "Pin model and prompt versions with weekly drift checks.",
+      "Maintain audited redaction and retention controls for all assisted responses.",
+    ],
     detailsUrl: "https://example.com/decisions/tier1-assistant",
     bodyText: bodyTextForScenario(
       "Pilot outcomes exceeded SLA and quality targets; move to controlled production rollout.",
@@ -373,6 +390,10 @@ export const SEED_DECISIONS: SeedDecision[] = [
     riskAdjustedRoi: 0.8,
     benefit12mGross: 190000,
     decisionType: "Pricing Strategy",
+    mitigations: [
+      "Constrain rollout to one category and region with auto-stop thresholds.",
+      "Publish proactive customer communication and exception workflows before launch.",
+    ],
     detailsUrl: "https://example.com/decisions/margin-recovery",
     bodyText: bodyTextForScenario(
       "Recover margin through pricing and promotion changes in constrained categories.",

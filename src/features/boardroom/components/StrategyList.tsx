@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import type { AgentConfig } from "../../../config/agent_config";
+import { normalizeAgentConfigs } from "../../../config/agent_config";
 import { DecisionPulse2D } from "./DecisionPulse2D";
 import { GalleryActionOverlay } from "./GalleryActionOverlay";
 import { PortfolioInsights } from "./PortfolioInsights";
@@ -9,12 +11,13 @@ import { PlusGlyph } from "./icons";
 import type { DecisionStrategy, PortfolioInsightsStatsResponse, WorkflowRunStateEntry } from "../types";
 import { strategyStatusTone } from "../utils";
 
-type SentimentFilter = "all" | "high-friction" | "pending-mitigations" | "smooth-approvals";
+type SentimentFilter = "all" | "high-friction" | "pending-mitigation" | "smooth-approval" | "unclassified";
 type AgentDotTone = "approved" | "blocked" | "caution" | "neutral";
 type ReviewerTone = "approved" | "caution" | "blocked";
 type GalleryAction = "REPORT" | "EDIT" | "RERUN";
 
 interface StrategyListProps {
+  agentConfigs: AgentConfig[];
   strategies: DecisionStrategy[];
   isLoading: boolean;
   error: string | null;
@@ -48,16 +51,17 @@ interface PortfolioCardModel {
   hasHighFriction: boolean;
   hasSmoothApproval: boolean;
   hasPendingMitigations: boolean;
+  hasUnclassified: boolean;
   hasRun: boolean;
   missingSections: string[];
 }
 
-const AGENT_DOT_ORDER = ["ceo", "cfo", "cto", "coo", "cmo", "chro", "compliance", "red-team"] as const;
 const FILTER_LABELS: Array<{ key: SentimentFilter; label: string }> = [
   { key: "all", label: "All Decisions" },
   { key: "high-friction", label: "High Friction" },
-  { key: "pending-mitigations", label: "Pending Mitigations" },
-  { key: "smooth-approvals", label: "Smooth Approvals" },
+  { key: "pending-mitigation", label: "Pending Mitigations" },
+  { key: "smooth-approval", label: "Smooth Approvals" },
+  { key: "unclassified", label: "Unknown / Proposed" },
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -98,33 +102,46 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function normalizeAgentKey(agent: string): string {
-  const normalized = agent.trim().toLowerCase();
-  if (normalized.includes("red") || normalized.includes("pre-mortem") || normalized.includes("premortem")) {
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeLookup(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeAgentKey(agent: string, knownAgentKeys: Set<string>, aliasToKey: Map<string, string>): string {
+  const normalized = normalizeLookup(agent);
+  if (normalized.length === 0) {
+    return "";
+  }
+  if (normalized.includes("red-team") || normalized.includes("redteam") || normalized.includes("pre-mortem") || normalized.includes("premortem")) {
     return "red-team";
   }
-  if (normalized.includes("compliance") || normalized.includes("legal") || normalized.includes("gc")) {
+  const aliased = aliasToKey.get(normalized);
+  if (aliased) {
+    return aliased;
+  }
+  if ((normalized.includes("compliance") || normalized.includes("legal") || normalized.includes("gc")) && knownAgentKeys.has("compliance")) {
     return "compliance";
   }
-  if (normalized.includes("ceo")) {
+  if ((normalized.includes("ceo") || normalized.includes("chief-executive")) && knownAgentKeys.has("ceo")) {
     return "ceo";
   }
-  if (normalized.includes("cfo")) {
+  if ((normalized.includes("cfo") || normalized.includes("chief-financial")) && knownAgentKeys.has("cfo")) {
     return "cfo";
   }
-  if (normalized.includes("cto")) {
+  if ((normalized.includes("cto") || normalized.includes("chief-technology") || normalized.includes("chief-technical")) && knownAgentKeys.has("cto")) {
     return "cto";
   }
-  if (normalized.includes("coo")) {
-    return "coo";
+  if (knownAgentKeys.has(normalized)) {
+    return normalized;
   }
-  if (normalized.includes("cmo")) {
-    return "cmo";
-  }
-  if (normalized.includes("chro") || normalized.includes("people")) {
-    return "chro";
-  }
-  return normalized.replace(/\s+/g, "-");
+  return "";
 }
 
 function normalizeStance(raw: unknown): AgentDotTone {
@@ -193,16 +210,24 @@ function selectWorstTone(current: AgentDotTone, next: AgentDotTone): AgentDotTon
   return priority[next] > priority[current] ? next : current;
 }
 
-function dotTonesFromStances(stances: AgentStance[]): AgentDotTone[] {
+function dotTonesFromStances(
+  stances: AgentStance[],
+  knownAgentKeys: Set<string>,
+  aliasToKey: Map<string, string>,
+  agentDotOrder: string[],
+): AgentDotTone[] {
   const byAgent = new Map<string, AgentDotTone>();
 
   for (const stance of stances) {
-    const key = normalizeAgentKey(stance.agent);
+    const key = normalizeAgentKey(stance.agent, knownAgentKeys, aliasToKey);
+    if (key.length === 0 || !agentDotOrder.includes(key)) {
+      continue;
+    }
     const previous = byAgent.get(key) ?? "neutral";
     byAgent.set(key, selectWorstTone(previous, stance.stance));
   }
 
-  return AGENT_DOT_ORDER.map((agentKey) => byAgent.get(agentKey) ?? "neutral");
+  return agentDotOrder.map((agentKey) => byAgent.get(agentKey) ?? "neutral");
 }
 
 function influenceFromDotTone(tone: AgentDotTone): number {
@@ -218,9 +243,51 @@ function influenceFromDotTone(tone: AgentDotTone): number {
   return 0.2;
 }
 
-function buildPulsePositions(): Array<[number, number, number]> {
-  return AGENT_DOT_ORDER.map((_, index) => {
-    const angle = (index / AGENT_DOT_ORDER.length) * Math.PI * 2 - Math.PI / 2;
+function buildPulseInfluence(
+  agentDotTones: AgentDotTone[],
+  agentDotOrder: string[],
+  metrics: {
+    dqs: number;
+    frictionScore: number;
+    pendingMitigationsCount: number;
+    riskFindingsCount: number;
+  },
+): number[] {
+  const base = agentDotTones.map((tone) => influenceFromDotTone(tone));
+  const hasSignal = agentDotTones.some((tone) => tone !== "neutral");
+  const dqsPressure = clamp01((100 - metrics.dqs) / 100);
+  const frictionPressure = clamp01(metrics.frictionScore / 4);
+  const pendingPressure = clamp01(metrics.pendingMitigationsCount / 6);
+  const riskPressure = clamp01(metrics.riskFindingsCount / 8);
+  const aggregatePressure = clamp01(
+    frictionPressure * 0.42 + pendingPressure * 0.34 + riskPressure * 0.16 + dqsPressure * 0.08,
+  );
+
+  const values = base.slice();
+  const redTeamIndex = agentDotOrder.indexOf("red-team");
+  if (redTeamIndex >= 0) {
+    values[redTeamIndex] = Math.max(
+      values[redTeamIndex] ?? 0,
+      0.24 + aggregatePressure * 0.72 + pendingPressure * 0.08,
+    );
+  }
+
+  if (!hasSignal && values.length > 0) {
+    values[0] = Math.max(values[0] ?? 0, 0.2 + frictionPressure * 0.58);
+    if (values.length > 1) {
+      values[1] = Math.max(values[1] ?? 0, 0.2 + pendingPressure * 0.56);
+    }
+    if (values.length > 2) {
+      values[2] = Math.max(values[2] ?? 0, 0.2 + dqsPressure * 0.48);
+    }
+  }
+
+  return values.map((value) => clamp01(value));
+}
+
+function buildPulsePositions(agentDotOrder: string[]): Array<[number, number, number]> {
+  return agentDotOrder.map((_, index) => {
+    const angle = (index / agentDotOrder.length) * Math.PI * 2 - Math.PI / 2;
     return [Math.cos(angle) * 0.95, Math.sin(angle) * 0.95, 0.35] as [number, number, number];
   });
 }
@@ -232,21 +299,42 @@ function filterMatches(filter: SentimentFilter, card: PortfolioCardModel): boole
   if (filter === "high-friction") {
     return card.hasHighFriction;
   }
-  if (filter === "smooth-approvals") {
+  if (filter === "pending-mitigation") {
+    return card.hasPendingMitigations;
+  }
+  if (filter === "smooth-approval") {
     return card.hasSmoothApproval;
   }
-  return card.hasPendingMitigations;
+  return card.hasUnclassified;
 }
 
-function buildPortfolioCard(strategy: DecisionStrategy, runs: WorkflowRunStateEntry[]): PortfolioCardModel {
+function getCardClassification(card: PortfolioCardModel): "high-friction" | "pending-mitigation" | "smooth-approval" | "unclassified" {
+  if (card.hasHighFriction) {
+    return "high-friction";
+  }
+  if (card.hasPendingMitigations) {
+    return "pending-mitigation";
+  }
+  if (card.hasSmoothApproval) {
+    return "smooth-approval";
+  }
+  return "unclassified";
+}
+
+function buildPortfolioCard(
+  strategy: DecisionStrategy,
+  runs: WorkflowRunStateEntry[],
+  knownAgentKeys: Set<string>,
+  aliasToKey: Map<string, string>,
+  agentDotOrder: string[],
+): PortfolioCardModel {
   const latestRun = runs[0] ?? null;
   const state = asRecord(latestRun?.state) ?? {};
 
   const rawDqs = asNumber(state.dqs);
-  const fallbackDqs = strategy.status === "Approved" ? 82 : strategy.status === "Blocked" ? 34 : strategy.status === "In Review" ? 58 : 50;
-  const dqs = clampPercent(rawDqs === null ? fallbackDqs : rawDqs <= 10 ? rawDqs * 10 : rawDqs);
+  const dqs = clampPercent(rawDqs === null ? 0 : rawDqs <= 10 ? rawDqs * 10 : rawDqs);
   const stances = parseStancesFromState(state);
-  const agentDotTones = dotTonesFromStances(stances);
+  const agentDotTones = dotTonesFromStances(stances, knownAgentKeys, aliasToKey, agentDotOrder);
   const riskFindingsCount = Math.max(0, asNumber(state.risk_findings_count) ?? 0);
   const pendingMitigationsCount = Math.max(0, asNumber(state.pending_mitigations_count) ?? 0);
   const missingSections = asStringArray(state.missing_sections).slice(0, 25);
@@ -256,21 +344,21 @@ function buildPortfolioCard(strategy: DecisionStrategy, runs: WorkflowRunStateEn
     stances.filter((entry) => entry.stance === "caution").length * 0.6 +
     pendingMitigationsCount * 0.4;
 
-  const hasHighFriction = frictionScore >= 1.8 || stances.some((entry) => entry.stance === "blocked");
+  const hasHighFriction = strategy.status === "Blocked" || frictionScore >= 1.8;
   const hasSmoothApproval =
     strategy.status === "Approved" &&
     pendingMitigationsCount === 0 &&
     stances.every((entry) => entry.stance !== "blocked" && entry.stance !== "caution") &&
     dqs >= 75;
   const hasPendingMitigations = pendingMitigationsCount > 0 || strategy.status === "In Review";
+  const hasUnclassified = !hasHighFriction && !hasPendingMitigations && !hasSmoothApproval;
 
-  const pulseInfluence = [
-    ...agentDotTones.map((tone) => influenceFromDotTone(tone)),
-    0.28,
-    0.26,
-    0.24,
-    0.22,
-  ].slice(0, 12);
+  const pulseInfluence = buildPulseInfluence(agentDotTones, agentDotOrder, {
+    dqs,
+    frictionScore,
+    pendingMitigationsCount,
+    riskFindingsCount,
+  });
 
   return {
     strategy,
@@ -278,13 +366,14 @@ function buildPortfolioCard(strategy: DecisionStrategy, runs: WorkflowRunStateEn
     stances,
     agentDotTones,
     pulseInfluence,
-    pulsePositions: buildPulsePositions(),
+    pulsePositions: buildPulsePositions(agentDotOrder),
     frictionScore,
     pendingMitigationsCount,
     riskFindingsCount,
     hasHighFriction,
     hasSmoothApproval,
     hasPendingMitigations,
+    hasUnclassified,
     hasRun: latestRun !== null,
     missingSections,
   };
@@ -305,14 +394,32 @@ function buildRunSummary(state: Record<string, unknown>, strategyName: string): 
   return `${strategyName} run completed with status ${status}.`;
 }
 
-function buildRunHistory(strategy: DecisionStrategy, runs: WorkflowRunStateEntry[]): StrategyRunHistoryEntry[] {
+function buildRunHistory(
+  strategy: DecisionStrategy,
+  runs: WorkflowRunStateEntry[],
+  knownAgentKeys: Set<string>,
+  aliasToKey: Map<string, string>,
+  agentDotOrder: string[],
+): StrategyRunHistoryEntry[] {
   const rows: StrategyRunHistoryEntry[] = runs.map((run) => {
     const state = asRecord(run.state) ?? {};
     const dqsRaw = asNumber(state.dqs);
     const dqs = clampPercent(dqsRaw === null ? 0 : dqsRaw <= 10 ? dqsRaw * 10 : dqsRaw);
     const stances = parseStancesFromState(state);
-    const dotTones = dotTonesFromStances(stances);
-    const influence = [...dotTones.map((tone) => influenceFromDotTone(tone)), 0.28, 0.24, 0.22, 0.2].slice(0, 12);
+    const dotTones = dotTonesFromStances(stances, knownAgentKeys, aliasToKey, agentDotOrder);
+    const riskFindingsCount = Math.max(0, asNumber(state.risk_findings_count) ?? 0);
+    const pendingMitigationsCount = Math.max(0, asNumber(state.pending_mitigations_count) ?? 0);
+    const frictionScore =
+      asNumber(state.friction_score) ??
+      stances.filter((entry) => entry.stance === "blocked").length * 1.4 +
+      stances.filter((entry) => entry.stance === "caution").length * 0.6 +
+      pendingMitigationsCount * 0.4;
+    const influence = buildPulseInfluence(dotTones, agentDotOrder, {
+      dqs,
+      frictionScore,
+      pendingMitigationsCount,
+      riskFindingsCount,
+    });
 
     return {
       id: run.id,
@@ -333,6 +440,7 @@ function buildRunHistory(strategy: DecisionStrategy, runs: WorkflowRunStateEntry
 }
 
 export function StrategyList({
+  agentConfigs,
   strategies,
   isLoading,
   error,
@@ -354,11 +462,51 @@ export function StrategyList({
   const [activeQuickLookStrategyId, setActiveQuickLookStrategyId] = useState<string | null>(null);
   const [activeHistoryStrategyId, setActiveHistoryStrategyId] = useState<string | null>(null);
   const [selectedRunByStrategy, setSelectedRunByStrategy] = useState<Record<string, number>>({});
+  const normalizedAgentConfigs = useMemo(() => normalizeAgentConfigs(agentConfigs), [agentConfigs]);
+  const knownAgentKeys = useMemo(() => new Set(normalizedAgentConfigs.map((config) => normalizeLookup(config.id))), [normalizedAgentConfigs]);
+  const aliasToKey = useMemo(() => {
+    const aliases = new Map<string, string>();
+    for (const config of normalizedAgentConfigs) {
+      const key = normalizeLookup(config.id);
+      aliases.set(key, key);
+      const roleAlias = normalizeLookup(config.role);
+      if (roleAlias.length > 0) {
+        aliases.set(roleAlias, key);
+      }
+      const nameAlias = normalizeLookup(config.name);
+      if (nameAlias.length > 0) {
+        aliases.set(nameAlias, key);
+      }
+    }
+    return aliases;
+  }, [normalizedAgentConfigs]);
+  const agentDotOrder = useMemo(() => {
+    const keys = normalizedAgentConfigs.map((config) => normalizeLookup(config.id));
+    return [...new Set([...keys, "red-team"])];
+  }, [normalizedAgentConfigs]);
+  const agentLabelByKey = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const config of normalizedAgentConfigs) {
+      const key = normalizeLookup(config.id);
+      const label = config.role.trim() || config.name.trim() || config.id.toUpperCase();
+      labels.set(key, label);
+    }
+    labels.set("red-team", "Red Team");
+    return labels;
+  }, [normalizedAgentConfigs]);
 
   const portfolioCards = useMemo(
     () =>
       strategies
-        .map((strategy) => buildPortfolioCard(strategy, workflowRunHistoryByDecision[strategy.id] ?? []))
+        .map((strategy) =>
+          buildPortfolioCard(
+            strategy,
+            workflowRunHistoryByDecision[strategy.id] ?? [],
+            knownAgentKeys,
+            aliasToKey,
+            agentDotOrder,
+          ),
+        )
         .sort((left, right) => {
           if (left.hasRun !== right.hasRun) {
             return left.hasRun ? -1 : 1;
@@ -368,7 +516,7 @@ export function StrategyList({
           }
           return left.strategy.name.localeCompare(right.strategy.name);
         }),
-    [strategies, workflowRunHistoryByDecision],
+    [agentDotOrder, aliasToKey, knownAgentKeys, strategies, workflowRunHistoryByDecision],
   );
 
   const filteredCards = useMemo(() => portfolioCards.filter((card) => filterMatches(filter, card)), [filter, portfolioCards]);
@@ -383,14 +531,17 @@ export function StrategyList({
     const reviewerFriction = new Map<string, number>();
     for (const card of cardsWithRuns) {
       for (const stance of card.stances) {
-        const key = normalizeAgentKey(stance.agent);
+        const key = normalizeAgentKey(stance.agent, knownAgentKeys, aliasToKey);
+        if (key.length === 0 || !agentDotOrder.includes(key)) {
+          continue;
+        }
         const increment = stance.stance === "blocked" ? 2 : stance.stance === "caution" ? 1 : 0;
         reviewerFriction.set(key, (reviewerFriction.get(key) ?? 0) + increment);
       }
     }
 
     const topReviewer = [...reviewerFriction.entries()].sort((left, right) => right[1] - left[1])[0] ?? null;
-    const topReviewerLabel = topReviewer ? topReviewer[0].replace(/-/g, " ").toUpperCase() : "N/A";
+    const topReviewerLabel = topReviewer ? agentLabelByKey.get(topReviewer[0]) ?? topReviewer[0].replace(/-/g, " ").toUpperCase() : "N/A";
 
     const totalFindings = cardsWithRuns.reduce((sum, entry) => sum + entry.riskFindingsCount, 0);
     const resolvedFindings = cardsWithRuns.reduce(
@@ -405,7 +556,7 @@ export function StrategyList({
       topReviewerScore: topReviewer?.[1] ?? 0,
       mitigationRate,
     };
-  }, [portfolioCards]);
+  }, [agentDotOrder, agentLabelByKey, aliasToKey, knownAgentKeys, portfolioCards]);
 
   const insightsEntries = useMemo(
     () =>
@@ -448,8 +599,8 @@ export function StrategyList({
       return [];
     }
     const runs = workflowRunHistoryByDecision[activeHistoryStrategy.id] ?? [];
-    return buildRunHistory(activeHistoryStrategy, runs);
-  }, [activeHistoryStrategy, workflowRunHistoryByDecision]);
+    return buildRunHistory(activeHistoryStrategy, runs, knownAgentKeys, aliasToKey, agentDotOrder);
+  }, [activeHistoryStrategy, agentDotOrder, aliasToKey, knownAgentKeys, workflowRunHistoryByDecision]);
   const selectedHistoryRunId =
     activeHistoryStrategyId && selectedRunByStrategy[activeHistoryStrategyId]
       ? selectedRunByStrategy[activeHistoryStrategyId]
@@ -514,7 +665,7 @@ export function StrategyList({
       cancelled = true;
       abortController.abort();
     };
-  }, [mode]);
+  }, [mode, remoteInsightsFetched, remoteInsightsLoading]);
 
   return (
     <section className="portfolio-gallery-shell" aria-label="Strategic portfolio">
@@ -536,7 +687,7 @@ export function StrategyList({
           aria-selected={mode === "gallery"}
           onClick={() => setMode("gallery")}
         >
-          Portfolio Gallery
+          Gallery
         </button>
         <button
           type="button"
@@ -545,7 +696,7 @@ export function StrategyList({
           aria-selected={mode === "insights"}
           onClick={() => setMode("insights")}
         >
-          Portfolio Insights
+          Insights
         </button>
       </div>
 
@@ -619,14 +770,8 @@ export function StrategyList({
                           isStatic={true}
                           stable={false}
                           classification={
-                            filter === "all"
-                              ? card.hasHighFriction
-                                ? "high-friction"
-                                : card.hasPendingMitigations
-                                  ? "pending-mitigation"
-                                  : card.hasSmoothApproval
-                                    ? "smooth-approval"
-                                    : undefined
+                            filter === "all" || filter === "unclassified"
+                              ? getCardClassification(card)
                               : undefined
                           }
                           agentInfluence={card.pulseInfluence}
@@ -712,7 +857,7 @@ export function StrategyList({
           if (matched) {
             onSelect(matched);
           }
-        }} remoteStats={remoteInsights} remoteLoading={remoteInsightsLoading} remoteError={remoteInsightsError} />
+        }} agentConfigs={normalizedAgentConfigs} remoteStats={remoteInsights} remoteLoading={remoteInsightsLoading} remoteError={remoteInsightsError} />
       ) : null}
     </section>
   );

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" role="img" aria-label="High DQS nucleus">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#071d16"/>
+      <stop offset="100%" stop-color="#04110c"/>
+    </radialGradient>
+    <radialGradient id="core" cx="46%" cy="42%" r="62%">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="55%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#065f46"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="300" height="300" fill="url(#bg)"/>
+  <circle cx="150" cy="166" r="88" fill="#10b981" opacity="0.15" filter="url(#glow)"/>
+
+  <polygon points="150,58 188,74 220,104 236,145 230,186 202,221 161,241 121,236 85,214 64,177 63,135 82,99 114,73"
+           fill="url(#core)"
+           stroke="#bbf7d0"
+           stroke-width="3"
+           filter="url(#glow)"/>
+
+  <g stroke="#d1fae5" stroke-width="1.5" opacity="0.35">
+    <line x1="150" y1="58" x2="150" y2="150"/>
+    <line x1="188" y1="74" x2="150" y2="150"/>
+    <line x1="220" y1="104" x2="150" y2="150"/>
+    <line x1="236" y1="145" x2="150" y2="150"/>
+    <line x1="230" y1="186" x2="150" y2="150"/>
+    <line x1="202" y1="221" x2="150" y2="150"/>
+    <line x1="161" y1="241" x2="150" y2="150"/>
+    <line x1="121" y1="236" x2="150" y2="150"/>
+    <line x1="85" y1="214" x2="150" y2="150"/>
+    <line x1="64" y1="177" x2="150" y2="150"/>
+    <line x1="63" y1="135" x2="150" y2="150"/>
+    <line x1="82" y1="99" x2="150" y2="150"/>
+    <line x1="114" y1="73" x2="150" y2="150"/>
+  </g>
+
+  <text x="150" y="276" text-anchor="middle" font-family="Georgia, serif" font-size="16" fill="#d1fae5">High DQS: Hardened Strategy</text>
+</svg>

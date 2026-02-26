@@ -2,9 +2,9 @@
 
 This document defines the current Boardroom UI behavior for workflow execution and report output.
 
-## 1) Workflow Editor (Execution Surface)
+## 1) Arena (Execution Surface)
 
-From Dashboard strategy details, selecting **Run Analysis** opens the **Workflow Editor** in full-page mode (navbar and footer preserved).
+From Dashboard strategy details, selecting **Run Analysis** opens the **Arena** in full-page mode (navbar and footer preserved).
 
 ### Canvas behavior
 - Decision Pulse is the center of execution feedback.
@@ -15,7 +15,7 @@ From Dashboard strategy details, selecting **Run Analysis** opens the **Workflow
 - Research indicator appears on-canvas as `Research` with globe icon (bottom-left).
 - Hygiene score appears on-canvas in the bottom-right badge.
 
-### Workflow Editor aside
+### Arena aside
 - Always visible during execution.
 - Includes run controls:
   - `Enable Research`

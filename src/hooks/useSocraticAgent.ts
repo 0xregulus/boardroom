@@ -41,6 +41,7 @@ export interface UseSocraticAgentResult {
   clippedEvidenceBySection: Record<string, SocraticResearchLink[]>;
   researchLoadingSection: string | null;
   researchError: string | null;
+  researchErrorSection: string | null;
   setActiveSectionKey: (sectionKey: string | null) => void;
   focusSection: (sectionKey: string) => void;
   requestResearch: (sectionKey: string, overridePrompt?: string) => Promise<void>;
@@ -54,6 +55,7 @@ export function useSocraticAgent({ documentContent, isReadOnly }: UseSocraticAge
   const [clippedEvidenceBySection, setClippedEvidenceBySection] = useState<Record<string, SocraticResearchLink[]>>({});
   const [researchLoadingSection, setResearchLoadingSection] = useState<string | null>(null);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [researchErrorSection, setResearchErrorSection] = useState<string | null>(null);
   const [session, setSession] = useState<SocraticSession>(() => buildSocraticSession(documentContent, {}));
   const [strategicDocument, setStrategicDocument] = useState<StrategicDecisionDocument>(() =>
     buildStrategicDecisionDocument(documentContent, buildSocraticSession(documentContent, {}), {
@@ -210,6 +212,7 @@ export function useSocraticAgent({ documentContent, isReadOnly }: UseSocraticAge
     const prompt = overridePrompt ?? session.checklist.find((item) => item.sectionKey === sectionKey)?.prompt ?? "";
 
     setResearchError(null);
+    setResearchErrorSection(null);
     setResearchLoadingSection(sectionKey);
     try {
       const response = await fetch("/api/research/socratic", {
@@ -228,12 +231,18 @@ export function useSocraticAgent({ documentContent, isReadOnly }: UseSocraticAge
       if (!response.ok) {
         throw new Error(payload.error || "Unable to fetch research.");
       }
+      const nextLinks = Array.isArray(payload.links) ? payload.links : [];
       setResearchLinksBySection((prev) => ({
         ...prev,
-        [sectionKey]: Array.isArray(payload.links) ? payload.links : [],
+        [sectionKey]: nextLinks,
       }));
+      if (nextLinks.length === 0) {
+        setResearchErrorSection(sectionKey);
+        setResearchError("No live citations were returned. Add more context or configure a research provider.");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to fetch research.";
+      setResearchErrorSection(sectionKey);
       setResearchError(message);
     } finally {
       setResearchLoadingSection(null);
@@ -308,6 +317,7 @@ export function useSocraticAgent({ documentContent, isReadOnly }: UseSocraticAge
     clippedEvidenceBySection,
     researchLoadingSection,
     researchError,
+    researchErrorSection,
     setActiveSectionKey,
     focusSection,
     requestResearch,

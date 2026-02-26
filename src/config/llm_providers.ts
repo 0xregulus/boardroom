@@ -35,6 +35,12 @@ export const PROVIDER_SETTINGS: Record<LLMProvider, ProviderSettings> = {
 const PROVIDERS = Object.freeze(Object.keys(PROVIDER_SETTINGS) as LLMProvider[]);
 const FAILOVER_PRIORITY = Object.freeze<LLMProvider[]>(["OpenAI", "Anthropic", "Mistral", "Meta"]);
 
+export interface LLMProviderOption {
+  provider: LLMProvider;
+  apiKeyEnv: string;
+  configured: boolean;
+}
+
 export const PROVIDER_MODEL_OPTIONS: Record<LLMProvider, string[]> = PROVIDERS.reduce(
   (acc, provider) => ({
     ...acc,
@@ -45,6 +51,14 @@ export const PROVIDER_MODEL_OPTIONS: Record<LLMProvider, string[]> = PROVIDERS.r
 
 export function providerOptions(): LLMProvider[] {
   return [...PROVIDERS];
+}
+
+function envValue(env: NodeJS.ProcessEnv | undefined, key: string): string {
+  if (!env) {
+    return "";
+  }
+
+  return (env[key] ?? "").trim();
 }
 
 export function providerFailoverOrder(preferredProvider: LLMProvider): LLMProvider[] {
@@ -96,4 +110,16 @@ export function getProviderBaseUrl(provider: LLMProvider): string | null {
 
 export function getProviderApiKeyEnv(provider: LLMProvider): string {
   return PROVIDER_SETTINGS[provider].apiKeyEnv;
+}
+
+export function providerEnabled(provider: LLMProvider, env: NodeJS.ProcessEnv | undefined = process.env): boolean {
+  return envValue(env, getProviderApiKeyEnv(provider)).length > 0;
+}
+
+export function listLLMProviderOptions(env: NodeJS.ProcessEnv | undefined = process.env): LLMProviderOption[] {
+  return PROVIDERS.map((provider) => ({
+    provider,
+    apiKeyEnv: getProviderApiKeyEnv(provider),
+    configured: providerEnabled(provider, env),
+  }));
 }

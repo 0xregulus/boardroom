@@ -6,7 +6,7 @@ import { enforceRateLimit, enforceSensitiveRouteAccess } from "../../../src/secu
 import { enforceWorkflowRunPolicy } from "../../../src/security/workflow_policy";
 import { getPersistedAgentConfigs } from "../../../src/store/postgres";
 import { resolveResearchProvider } from "../../../src/research/providers";
-import { isSimulationModeEnabled } from "../../../src/simulation/mode";
+import { resolveWorkflowOfflineTraceMessage } from "../../../src/offline/policy";
 import { runAllProposedDecisions, runDecisionWorkflow } from "../../../src/workflow/decision_workflow";
 import type { WorkflowTraceEvent } from "../../../src/workflow/states";
 
@@ -184,10 +184,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         };
         res.write(": stream-open\n\n");
 
-        if (isSimulationModeEnabled()) {
+        const offlineTraceMessage = resolveWorkflowOfflineTraceMessage();
+        if (offlineTraceMessage) {
           sendEvent("execution_trace", {
             tag: "EXEC",
-            message: "Simulation mode active: external provider calls are mocked with synthetic latency and responses.",
+            message: offlineTraceMessage,
           } satisfies WorkflowTraceEvent);
         }
 

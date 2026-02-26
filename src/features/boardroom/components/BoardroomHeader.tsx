@@ -37,7 +37,7 @@ export function BoardroomHeader({
           </div>
           <div className="boardroom-brand-copy">
             <h1>Boardroom</h1>
-            <p>Multi-Agent Workflow Engine</p>
+            <p>Multi-Agent Decision Engine</p>
           </div>
         </button>
         <span className="boardroom-nav-divider" aria-hidden="true" />
@@ -73,7 +73,7 @@ export function BoardroomHeader({
               className={activeTab === "editor" ? "active" : ""}
               onClick={() => onSetActiveTab("editor")}
             >
-              Workflow
+              Arena
             </button>
             <button
               type="button"

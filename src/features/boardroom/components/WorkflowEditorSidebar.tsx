@@ -36,7 +36,7 @@ export function WorkflowEditorSidebar({
   return (
     <aside className="boardroom-panel boardroom-pulse-aside">
       <div className="panel-header">
-        <h2>Workflow Editor</h2>
+        <h2>Arena</h2>
         <p>View execution status and step-level progress in real time.</p>
       </div>
 

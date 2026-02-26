@@ -24,16 +24,29 @@ function envNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function isSimulationModeEnabled(env: NodeJS.ProcessEnv | undefined = process.env): boolean {
+export function isOfflineModeEnabled(env: NodeJS.ProcessEnv | undefined = process.env): boolean {
   if (!env) {
     return false;
   }
 
   return (
-    parseBooleanFlag(env.BOARDROOM_SIMULATION_MODE) ||
-    parseBooleanFlag(env.NEXT_PUBLIC_BOARDROOM_SIMULATION_MODE) ||
-    parseBooleanFlag(env.npm_config_simulation)
+    parseBooleanFlag(env.BOARDROOM_OFFLINE_MODE) ||
+    parseBooleanFlag(env.NEXT_PUBLIC_BOARDROOM_OFFLINE_MODE) ||
+    parseBooleanFlag(env.npm_config_offline)
   );
+}
+
+export function withOfflineFallback(
+  value: unknown,
+  fallback: string,
+  env: NodeJS.ProcessEnv | undefined = process.env,
+): string {
+  const primary = typeof value === "string" ? value.trim() : "";
+  if (primary.length > 0) {
+    return primary;
+  }
+
+  return isOfflineModeEnabled(env) ? fallback : "";
 }
 
 export function hashString(value: string): number {
@@ -44,9 +57,9 @@ export function hashString(value: string): number {
   return hash;
 }
 
-export function resolveSimulationDelayMs(seed: string, env: NodeJS.ProcessEnv | undefined = process.env): number {
-  const minCandidate = envNumber(env?.BOARDROOM_SIMULATION_MIN_DELAY_MS);
-  const maxCandidate = envNumber(env?.BOARDROOM_SIMULATION_MAX_DELAY_MS);
+export function resolveOfflineDelayMs(seed: string, env: NodeJS.ProcessEnv | undefined = process.env): number {
+  const minCandidate = envNumber(env?.BOARDROOM_OFFLINE_MIN_DELAY_MS);
+  const maxCandidate = envNumber(env?.BOARDROOM_OFFLINE_MAX_DELAY_MS);
 
   const min = Math.max(0, Math.min(MAX_DELAY_MS, Math.round(minCandidate ?? DEFAULT_DELAY_MIN_MS)));
   const max = Math.max(min, Math.min(MAX_DELAY_MS, Math.round(maxCandidate ?? DEFAULT_DELAY_MAX_MS)));

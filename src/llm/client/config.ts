@@ -4,7 +4,7 @@ import {
   getProviderBaseUrl,
   type LLMProvider,
 } from "../../config/llm_providers";
-import { isSimulationModeEnabled } from "../../simulation/mode";
+import { withOfflineFallback } from "../../offline/mode";
 
 const DEFAULT_PROVIDER_COOLDOWN_MS = 20_000;
 const MAX_PROVIDER_COOLDOWN_MS = 5 * 60 * 1_000;
@@ -37,13 +37,9 @@ export function jsonOnlyInstruction(enabled: boolean): string {
 }
 
 export function requireProviderApiKey(provider: LLMProvider): string {
-  const apiKey = getProviderApiKey(provider);
+  const apiKey = withOfflineFallback(getProviderApiKey(provider), `offline-${provider.toLowerCase()}-key`);
   if (apiKey.length > 0) {
     return apiKey;
-  }
-
-  if (isSimulationModeEnabled()) {
-    return `simulated-${provider.toLowerCase()}-key`;
   }
 
   const envName = getProviderApiKeyEnv(provider);
@@ -54,10 +50,6 @@ export function requireProviderBaseUrl(provider: LLMProvider): string {
   const baseUrl = getProviderBaseUrl(provider);
   if (baseUrl && baseUrl.trim().length > 0) {
     return normalizeBaseUrl(baseUrl);
-  }
-
-  if (isSimulationModeEnabled()) {
-    return "https://simulation.local";
   }
 
   throw new Error(`${provider} base URL is not configured.`);

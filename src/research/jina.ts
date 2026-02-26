@@ -13,8 +13,8 @@ import {
   type ResearchItem,
   type ResearchReport,
 } from "./common";
-import { buildSimulatedResearchReport } from "./simulation";
-import { isSimulationModeEnabled } from "../simulation/mode";
+import { offlineAwareFetch } from "../offline/fetch";
+import { withOfflineFallback } from "../offline/mode";
 
 const JINA_ENDPOINT = "https://api.jina.ai/v1/search";
 const DEFAULT_MAX_RESULTS = 4;
@@ -26,7 +26,7 @@ interface JinaSearchResponsePayload {
 }
 
 function jinaApiKey(): string {
-  return (process.env.JINA_API_KEY ?? "").trim();
+  return withOfflineFallback(process.env.JINA_API_KEY, "offline-jina-key");
 }
 
 export function jinaEnabled(): boolean {
@@ -75,13 +75,6 @@ function mapResults(results: unknown[], maxResults: number, allowedHosts: Set<st
 }
 
 export async function fetchJinaResearch(input: ResearchInput): Promise<ResearchReport | null> {
-  if (isSimulationModeEnabled()) {
-    return buildSimulatedResearchReport("Jina", {
-      ...input,
-      snapshot: sanitizeResearchSnapshot(input.snapshot),
-    });
-  }
-
   const apiKey = jinaApiKey();
   if (apiKey.length === 0 || typeof fetch !== "function") {
     return null;
@@ -102,7 +95,7 @@ export async function fetchJinaResearch(input: ResearchInput): Promise<ResearchR
   const timer = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(JINA_ENDPOINT, {
+    const response = await offlineAwareFetch(JINA_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

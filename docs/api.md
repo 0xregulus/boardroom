@@ -56,5 +56,38 @@ Persists normalized agent configs.
 Request body:
 - `agentConfigs: AgentConfig[]`
 
+### POST `/api/socratic/validate-substance`
+Semantic mitigation validator used by the governance gate.
+
+Request body:
+- `riskTitle: string` (`3..220` chars)
+- `riskDescription: string` (`3..500` chars)
+- `mitigationText: string` (`10..2000` chars)
+
+Response body:
+- `substanceScore: number` (`0..1`)
+- `approved: boolean`
+- `feedback: string`
+
+Operational contract:
+- Used to reject superficial mitigations that are not causally tied to the risk.
+- Typical acceptance threshold in UX flow: `substanceScore >= 0.7` and `approved = true`.
+
+### POST `/api/socratic/validate`
+Binary mitigation validator used for tactical acceptance checks.
+
+Request body:
+- `riskTitle: string`
+- `riskDescription: string`
+- `mitigationText: string`
+- `riskLevel?: "Critical" | "Warning"`
+
+Response body:
+- `approved: boolean`
+- `feedback: string`
+
+### POST `/api/socratic/observe`
+Runs Socratic observation and returns structured governance feedback for drafts.
+
 ### GET `/api/health`
 Checks API and PostgreSQL connectivity.

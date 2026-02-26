@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 
 import OpenAI from "openai";
-import { isSimulationModeEnabled, resolveSimulationDelayMs, sleepMs } from "../simulation/mode";
+import { sleepMs } from "../offline/mode";
+import { resolveEmbeddingOfflinePolicy } from "../offline/policy";
 
 export type EmbeddingProvider = "openai" | "local-hash";
 
@@ -191,9 +192,9 @@ export function cosineSimilarityVectors(left: number[], right: number[]): number
 
 export async function embedText(input: string, options?: EmbedTextOptions): Promise<EmbeddingResult> {
   const text = normalizeText(input);
-  const simulationMode = isSimulationModeEnabled();
   const requestedProvider = options?.provider ?? getEmbeddingProvider();
-  const provider = simulationMode && requestedProvider === "openai" ? "local-hash" : requestedProvider;
+  const offlinePolicy = resolveEmbeddingOfflinePolicy(requestedProvider, text);
+  const provider = offlinePolicy.provider;
   const allowFallback = options?.allowFallback ?? true;
   const dimensions = Math.max(64, Math.min(1536, Math.round(options?.dimensions ?? DEFAULT_LOCAL_DIMENSIONS)));
 
@@ -217,8 +218,8 @@ export async function embedText(input: string, options?: EmbedTextOptions): Prom
     }
   }
 
-  if (simulationMode && requestedProvider === "openai") {
-    await sleepMs(resolveSimulationDelayMs(`embedding:${text.slice(0, 120)}`));
+  if (offlinePolicy.fallbackDelayMs !== null) {
+    await sleepMs(offlinePolicy.fallbackDelayMs);
   }
 
   const vector = embedWithLocalHash(text, dimensions);

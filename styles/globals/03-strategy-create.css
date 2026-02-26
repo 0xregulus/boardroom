@@ -2812,6 +2812,17 @@
   line-height: 1.45;
 }
 
+.create-section-evidence-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 10px;
+  line-height: 1.45;
+  padding: 6px 8px;
+}
+
 .create-section-sidecar button {
   border: 1px solid #bfdbfe;
   border-radius: 10px;

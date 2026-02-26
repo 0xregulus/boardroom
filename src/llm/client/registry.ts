@@ -5,7 +5,7 @@ import {
   providerFailoverOrder,
   resolveModelForProvider,
 } from "../../config/llm_providers";
-import { isSimulationModeEnabled } from "../../simulation/mode";
+import { withOfflineFallback } from "../../offline/mode";
 import {
   errorMessage,
   parseRetryDelayMs,
@@ -62,14 +62,6 @@ export class ProviderClientRegistry {
   }
 
   async completeWithFallback(preferredProvider: LLMProvider, request: LLMCompletionRequest): Promise<string> {
-    if (isSimulationModeEnabled()) {
-      const client = this.getClient(preferredProvider);
-      return client.complete({
-        ...request,
-        model: resolveModelForProvider(preferredProvider, request.model),
-      });
-    }
-
     const attemptedProviders = this.buildAttemptOrder(preferredProvider);
     const failures: string[] = [];
     const hasConfiguredAlternative = attemptedProviders.some(
@@ -78,7 +70,8 @@ export class ProviderClientRegistry {
     let deferredPreferredRetryDelayMs: number | null = null;
 
     for (const provider of attemptedProviders) {
-      if (getProviderApiKey(provider).length === 0) {
+      const apiKey = withOfflineFallback(getProviderApiKey(provider), `offline-${provider.toLowerCase()}-key`);
+      if (apiKey.length === 0) {
         failures.push(`${provider}: missing ${getProviderApiKeyEnv(provider)}`);
         this.markProviderCooldown(provider);
         continue;

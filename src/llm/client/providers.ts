@@ -1,9 +1,8 @@
 import OpenAI from "openai";
 
 import { type LLMProvider } from "../../config/llm_providers";
-import { isSimulationModeEnabled } from "../../simulation/mode";
+import { offlineAwareFetch } from "../../offline/fetch";
 import { jsonOnlyInstruction, requireProviderApiKey, requireProviderBaseUrl } from "./config";
-import { simulateCompletion } from "./simulation";
 import type {
   AnthropicCompletionResponse,
   LLMClient,
@@ -19,14 +18,11 @@ class OpenAIProviderClient implements LLMClient {
     this.client = new OpenAI({
       apiKey: requireProviderApiKey("OpenAI"),
       baseURL: requireProviderBaseUrl("OpenAI"),
+      fetch: offlineAwareFetch,
     });
   }
 
   async complete(request: LLMCompletionRequest): Promise<string> {
-    if (isSimulationModeEnabled()) {
-      return simulateCompletion(this.provider, request);
-    }
-
     const response = await this.client.chat.completions.create({
       model: request.model,
       messages: [
@@ -54,11 +50,7 @@ abstract class OpenAICompatibleProviderClient implements LLMClient {
   }
 
   async complete(request: LLMCompletionRequest): Promise<string> {
-    if (isSimulationModeEnabled()) {
-      return simulateCompletion(this.provider, request);
-    }
-
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await offlineAwareFetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -117,11 +109,7 @@ class AnthropicProviderClient implements LLMClient {
   }
 
   async complete(request: LLMCompletionRequest): Promise<string> {
-    if (isSimulationModeEnabled()) {
-      return simulateCompletion(this.provider, request);
-    }
-
-    const response = await fetch(`${this.baseUrl}/v1/messages`, {
+    const response = await offlineAwareFetch(`${this.baseUrl}/v1/messages`, {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,

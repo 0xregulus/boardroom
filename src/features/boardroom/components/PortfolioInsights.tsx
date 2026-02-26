@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 
+import type { AgentConfig } from "../../../config/agent_config";
+import { normalizeAgentConfigs } from "../../../config/agent_config";
 import type { PortfolioInsightsStatsResponse } from "../types";
 import { DecisionPulse2D } from "./DecisionPulse2D";
 
@@ -35,6 +37,7 @@ export interface PortfolioInsightsEntry {
 }
 
 interface PortfolioInsightsProps {
+  agentConfigs: AgentConfig[];
   entries: PortfolioInsightsEntry[];
   onOpenStrategy: (strategyId: string) => void;
   remoteStats?: PortfolioInsightsStatsResponse | null;
@@ -53,6 +56,7 @@ interface PillarHeatCell {
 interface RadarAxisMetric {
   key: string;
   label: string;
+  pillar: PillarKey;
   averageScore: number;
   normalized: number;
   friction: number;
@@ -69,17 +73,11 @@ interface VelocityMetric {
 }
 
 type RemoteRadarEntry = NonNullable<PortfolioInsightsStatsResponse["radar"]>[number];
-
-const RADAR_AXES = [
-  { key: "ceo", label: "CEO" },
-  { key: "cfo", label: "CFO" },
-  { key: "cto", label: "CTO" },
-  { key: "coo", label: "COO" },
-  { key: "cmo", label: "CMO" },
-  { key: "chro", label: "CHRO" },
-  { key: "compliance", label: "Compliance" },
-  { key: "red-team", label: "Red Team" },
-] as const;
+interface RadarAxisSpec {
+  key: string;
+  label: string;
+  pillar: PillarKey;
+}
 
 const PILLAR_LABELS: Record<PillarKey, string> = {
   viability: "Viability",
@@ -89,36 +87,72 @@ const PILLAR_LABELS: Record<PillarKey, string> = {
   "red-team": "Red-Team",
 };
 
-const AGENT_TO_PILLAR: Record<string, PillarKey> = {
-  ceo: "viability",
-  cfo: "integrity",
-  cto: "feasibility",
-  coo: "feasibility",
-  cmo: "viability",
-  chro: "feasibility",
-  compliance: "compliance",
-  "red-team": "red-team",
-};
-
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function normalizeAgentKey(agent: string): string {
-  const normalized = agent.trim().toLowerCase();
-  if (normalized.includes("red") || normalized.includes("pre-mortem") || normalized.includes("premortem")) {
-    return "red-team";
-  }
-  if (normalized.includes("compliance") || normalized.includes("legal") || normalized.includes("gc")) {
+function normalizeLookup(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function inferPillarFromDescriptor(descriptor: string): PillarKey {
+  const lowered = descriptor.toLowerCase();
+  if (lowered.includes("compliance") || lowered.includes("legal") || lowered.includes("gc") || lowered.includes("privacy")) {
     return "compliance";
   }
-  if (normalized.includes("ceo")) return "ceo";
-  if (normalized.includes("cfo")) return "cfo";
-  if (normalized.includes("cto")) return "cto";
-  if (normalized.includes("coo")) return "coo";
-  if (normalized.includes("cmo")) return "cmo";
-  if (normalized.includes("chro") || normalized.includes("people")) return "chro";
-  return normalized.replace(/\s+/g, "-");
+  if (lowered.includes("cfo") || lowered.includes("finance") || lowered.includes("financial") || lowered.includes("capital")) {
+    return "integrity";
+  }
+  if (lowered.includes("cto") || lowered.includes("technology") || lowered.includes("engineering") || lowered.includes("ops") || lowered.includes("operation") || lowered.includes("people") || lowered.includes("hr")) {
+    return "feasibility";
+  }
+  if (lowered.includes("red-team") || lowered.includes("premortem") || lowered.includes("pre-mortem")) {
+    return "red-team";
+  }
+  return "viability";
+}
+
+function buildRadarAxes(agentConfigs: AgentConfig[]): RadarAxisSpec[] {
+  const axes = new Map<string, RadarAxisSpec>();
+  for (const config of normalizeAgentConfigs(agentConfigs)) {
+    const key = normalizeLookup(config.id);
+    if (key.length === 0) {
+      continue;
+    }
+    axes.set(key, {
+      key,
+      label: config.role.trim() || config.name.trim() || config.id.toUpperCase(),
+      pillar: inferPillarFromDescriptor(`${config.id} ${config.role} ${config.name}`),
+    });
+  }
+  axes.set("red-team", { key: "red-team", label: "Red Team", pillar: "red-team" });
+  return [...axes.values()];
+}
+
+function normalizeAgentKey(agent: string, knownAgentKeys: Set<string>, aliasToKey: Map<string, string>): string {
+  const normalized = normalizeLookup(agent);
+  if (normalized.length === 0) {
+    return "";
+  }
+  if (normalized.includes("red-team") || normalized.includes("redteam") || normalized.includes("pre-mortem") || normalized.includes("premortem")) {
+    return "red-team";
+  }
+  const aliased = aliasToKey.get(normalized);
+  if (aliased) {
+    return aliased;
+  }
+  if ((normalized.includes("compliance") || normalized.includes("legal") || normalized.includes("gc")) && knownAgentKeys.has("compliance")) {
+    return "compliance";
+  }
+  if ((normalized.includes("ceo") || normalized.includes("chief-executive")) && knownAgentKeys.has("ceo")) return "ceo";
+  if ((normalized.includes("cfo") || normalized.includes("chief-financial")) && knownAgentKeys.has("cfo")) return "cfo";
+  if ((normalized.includes("cto") || normalized.includes("chief-technology") || normalized.includes("chief-technical")) && knownAgentKeys.has("cto")) return "cto";
+  if (knownAgentKeys.has(normalized)) return normalized;
+  return "";
 }
 
 function inferPillarsFromGap(gap: string): PillarKey[] {
@@ -190,7 +224,12 @@ function toPillarTone(weaknessRate: number): PillarTone {
   return "healthy";
 }
 
-function buildHeatmap(entries: PortfolioInsightsEntry[]): PillarHeatCell[] {
+function buildHeatmap(
+  entries: PortfolioInsightsEntry[],
+  knownAgentKeys: Set<string>,
+  aliasToKey: Map<string, string>,
+  pillarByAgentKey: Map<string, PillarKey>,
+): PillarHeatCell[] {
   const cardsWithRuns = entries.filter((entry) => entry.hasRun);
   const decisionCount = Math.max(1, cardsWithRuns.length);
   const signals: Record<PillarKey, number> = {
@@ -209,8 +248,8 @@ function buildHeatmap(entries: PortfolioInsightsEntry[]): PillarHeatCell[] {
     }
 
     for (const stance of entry.stances) {
-      const agentKey = normalizeAgentKey(stance.agent);
-      const pillar = AGENT_TO_PILLAR[agentKey];
+      const agentKey = normalizeAgentKey(stance.agent, knownAgentKeys, aliasToKey);
+      const pillar = pillarByAgentKey.get(agentKey);
       if (!pillar || stance.stance === "approved") {
         continue;
       }
@@ -259,20 +298,25 @@ function buildHeatmapFromBlindspots(
   return buildHeatmapFromSignals(signals, decisionCount);
 }
 
-function buildRadar(entries: PortfolioInsightsEntry[]): {
+function buildRadar(
+  entries: PortfolioInsightsEntry[],
+  axesSpec: RadarAxisSpec[],
+  knownAgentKeys: Set<string>,
+  aliasToKey: Map<string, string>,
+): {
   axes: RadarAxisMetric[];
   hardest: RadarAxisMetric | null;
   strategyExecutionGap: number;
 } {
   const accumulator = new Map<string, { sum: number; count: number; friction: number }>();
 
-  for (const axis of RADAR_AXES) {
+  for (const axis of axesSpec) {
     accumulator.set(axis.key, { sum: 0, count: 0, friction: 0 });
   }
 
   for (const entry of entries) {
     for (const stance of entry.stances) {
-      const key = normalizeAgentKey(stance.agent);
+      const key = normalizeAgentKey(stance.agent, knownAgentKeys, aliasToKey);
       const bucket = accumulator.get(key);
       if (!bucket) {
         continue;
@@ -283,12 +327,13 @@ function buildRadar(entries: PortfolioInsightsEntry[]): {
     }
   }
 
-  const axes = RADAR_AXES.map((axis) => {
+  const axes = axesSpec.map((axis) => {
     const bucket = accumulator.get(axis.key) ?? { sum: 0, count: 0, friction: 0 };
     const averageScore = bucket.count > 0 ? bucket.sum / bucket.count : 6.6;
     return {
       key: axis.key,
       label: axis.label,
+      pillar: axis.pillar,
       averageScore,
       normalized: Math.max(0.05, Math.min(1, averageScore / 10)),
       friction: bucket.friction,
@@ -299,17 +344,25 @@ function buildRadar(entries: PortfolioInsightsEntry[]): {
   return finalizeRadar(axes);
 }
 
-function buildRadarFromRemote(radar: NonNullable<PortfolioInsightsStatsResponse["radar"]>): {
+function buildRadarFromRemote(
+  radar: NonNullable<PortfolioInsightsStatsResponse["radar"]>,
+  axesSpec: RadarAxisSpec[],
+  knownAgentKeys: Set<string>,
+  aliasToKey: Map<string, string>,
+): {
   axes: RadarAxisMetric[];
   hardest: RadarAxisMetric | null;
   strategyExecutionGap: number;
 } {
   const byKey = new Map<string, RemoteRadarEntry>();
   for (const row of radar) {
-    byKey.set(normalizeAgentKey(row.agent_name), row);
+    const key = normalizeAgentKey(row.agent_name, knownAgentKeys, aliasToKey);
+    if (key.length > 0) {
+      byKey.set(key, row);
+    }
   }
 
-  const axes = RADAR_AXES.map((axis) => {
+  const axes = axesSpec.map((axis) => {
     const row = byKey.get(axis.key);
     const averageScore = row ? Math.max(0, Math.min(10, row.avg_sentiment)) : 6.6;
     const friction = row ? row.total_vetos : 0;
@@ -317,6 +370,7 @@ function buildRadarFromRemote(radar: NonNullable<PortfolioInsightsStatsResponse[
     return {
       key: axis.key,
       label: axis.label,
+      pillar: axis.pillar,
       averageScore,
       normalized: Math.max(0.05, Math.min(1, averageScore / 10)),
       friction,
@@ -472,12 +526,41 @@ function formatSignedPercent(value: number | null): string {
 }
 
 export function PortfolioInsights({
+  agentConfigs,
   entries,
   onOpenStrategy,
   remoteStats = null,
   remoteLoading = false,
   remoteError = null,
 }: PortfolioInsightsProps) {
+  const radarAxes = useMemo(() => buildRadarAxes(agentConfigs), [agentConfigs]);
+  const knownAgentKeys = useMemo(() => new Set(radarAxes.map((axis) => axis.key)), [radarAxes]);
+  const aliasToKey = useMemo(() => {
+    const aliases = new Map<string, string>();
+    for (const config of normalizeAgentConfigs(agentConfigs)) {
+      const key = normalizeLookup(config.id);
+      if (key.length === 0) {
+        continue;
+      }
+      aliases.set(key, key);
+      const roleAlias = normalizeLookup(config.role);
+      if (roleAlias.length > 0) {
+        aliases.set(roleAlias, key);
+      }
+      const nameAlias = normalizeLookup(config.name);
+      if (nameAlias.length > 0) {
+        aliases.set(nameAlias, key);
+      }
+    }
+    return aliases;
+  }, [agentConfigs]);
+  const pillarByAgentKey = useMemo(() => {
+    const byKey = new Map<string, PillarKey>();
+    for (const axis of radarAxes) {
+      byKey.set(axis.key, axis.pillar);
+    }
+    return byKey;
+  }, [radarAxes]);
   const entriesWithRuns = useMemo(() => entries.filter((entry) => entry.hasRun), [entries]);
   const localGlobalDqs = useMemo(() => {
     if (entriesWithRuns.length === 0) {
@@ -495,8 +578,8 @@ export function PortfolioInsights({
       const decisionCount = remoteStats.summary?.total_decisions_made ?? entriesWithRuns.length;
       return buildHeatmapFromBlindspots(remoteStats.blindspots, decisionCount);
     }
-    return buildHeatmap(entries);
-  }, [entries, entriesWithRuns.length, remoteStats]);
+    return buildHeatmap(entries, knownAgentKeys, aliasToKey, pillarByAgentKey);
+  }, [aliasToKey, entries, entriesWithRuns.length, knownAgentKeys, pillarByAgentKey, remoteStats]);
 
   const heatmapTop = useMemo(
     () => [...heatmap].sort((left, right) => right.weaknessRate - left.weaknessRate)[0] ?? null,
@@ -505,10 +588,10 @@ export function PortfolioInsights({
 
   const { axes, hardest, strategyExecutionGap } = useMemo(() => {
     if (remoteStats?.radar && remoteStats.radar.length > 0) {
-      return buildRadarFromRemote(remoteStats.radar);
+      return buildRadarFromRemote(remoteStats.radar, radarAxes, knownAgentKeys, aliasToKey);
     }
-    return buildRadar(entries);
-  }, [entries, remoteStats]);
+    return buildRadar(entries, radarAxes, knownAgentKeys, aliasToKey);
+  }, [aliasToKey, entries, knownAgentKeys, radarAxes, remoteStats]);
 
   const velocity = useMemo(() => {
     if (remoteStats?.mitigation_velocity) {
@@ -529,7 +612,7 @@ export function PortfolioInsights({
   const sparkMax = Math.max(1, ...sparkEvents.map((event) => event.hours));
 
   return (
-    <section className="portfolio-insights" aria-label="Portfolio insights dashboard">
+    <section className="portfolio-insights" aria-label="Insights dashboard">
       {remoteLoading ? <p className="portfolio-insight-empty">Refreshing insights from Strategic Memory...</p> : null}
       {remoteError ? <p className="portfolio-insight-empty">Insights API unavailable: {remoteError}</p> : null}
 

@@ -13,8 +13,8 @@ import {
   type ResearchItem,
   type ResearchReport,
 } from "./common";
-import { buildSimulatedResearchReport } from "./simulation";
-import { isSimulationModeEnabled } from "../simulation/mode";
+import { offlineAwareFetch } from "../offline/fetch";
+import { withOfflineFallback } from "../offline/mode";
 
 const PERPLEXITY_ENDPOINT = "https://api.perplexity.ai/chat/completions";
 const DEFAULT_MAX_RESULTS = 4;
@@ -42,7 +42,7 @@ interface PerplexityResponsePayload {
 }
 
 function perplexityApiKey(): string {
-  return (process.env.PERPLEXITY_API_KEY ?? "").trim();
+  return withOfflineFallback(process.env.PERPLEXITY_API_KEY, "offline-perplexity-key");
 }
 
 export function perplexityEnabled(): boolean {
@@ -99,13 +99,6 @@ function itemFromSearchResult(entry: PerplexitySearchResult, allowedHosts: Set<s
 }
 
 export async function fetchPerplexityResearch(input: ResearchInput): Promise<ResearchReport | null> {
-  if (isSimulationModeEnabled()) {
-    return buildSimulatedResearchReport("Perplexity", {
-      ...input,
-      snapshot: sanitizeResearchSnapshot(input.snapshot),
-    });
-  }
-
   const apiKey = perplexityApiKey();
   if (apiKey.length === 0 || typeof fetch !== "function") {
     return null;
@@ -126,7 +119,7 @@ export async function fetchPerplexityResearch(input: ResearchInput): Promise<Res
   const timer = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(PERPLEXITY_ENDPOINT, {
+    const response = await offlineAwareFetch(PERPLEXITY_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { EmbeddingOfflinePolicy } from "../../src/offline/policy";
 
 const mocks = vi.hoisted(() => ({
   embeddingsCreate: vi.fn(),
-  isSimulationModeEnabled: vi.fn(() => false),
-  resolveSimulationDelayMs: vi.fn(() => 7),
+  resolveEmbeddingOfflinePolicy: vi.fn(
+    (): EmbeddingOfflinePolicy => ({ provider: "local-hash", fallbackDelayMs: null }),
+  ),
   sleepMs: vi.fn(() => Promise.resolve()),
 }));
 
@@ -15,9 +17,11 @@ vi.mock("openai", () => ({
   },
 }));
 
-vi.mock("../../src/simulation/mode", () => ({
-  isSimulationModeEnabled: mocks.isSimulationModeEnabled,
-  resolveSimulationDelayMs: mocks.resolveSimulationDelayMs,
+vi.mock("../../src/offline/policy", () => ({
+  resolveEmbeddingOfflinePolicy: mocks.resolveEmbeddingOfflinePolicy,
+}));
+
+vi.mock("../../src/offline/mode", () => ({
   sleepMs: mocks.sleepMs,
 }));
 
@@ -31,6 +35,7 @@ describe("memory/embedder", () => {
     delete process.env.BOARDROOM_EMBEDDING_PROVIDER;
     delete process.env.BOARDROOM_EMBEDDING_MODEL;
     delete process.env.OPENAI_API_KEY;
+    mocks.resolveEmbeddingOfflinePolicy.mockReturnValue({ provider: "local-hash", fallbackDelayMs: null });
   });
 
   it("produces stable source hashes from normalized text", async () => {
@@ -61,6 +66,7 @@ describe("memory/embedder", () => {
 
   it("uses OpenAI embeddings when requested and available", async () => {
     process.env.OPENAI_API_KEY = "test-key";
+    mocks.resolveEmbeddingOfflinePolicy.mockReturnValue({ provider: "openai", fallbackDelayMs: null });
     mocks.embeddingsCreate.mockResolvedValueOnce({
       data: [{ embedding: [3, 4] }],
     });
@@ -81,6 +87,7 @@ describe("memory/embedder", () => {
 
   it("throws OpenAI errors when fallback is disabled", async () => {
     process.env.OPENAI_API_KEY = "test-key";
+    mocks.resolveEmbeddingOfflinePolicy.mockReturnValue({ provider: "openai", fallbackDelayMs: null });
     const failure = new Error("provider unavailable");
     mocks.embeddingsCreate.mockRejectedValueOnce(failure);
     const mod = await import("../../src/memory/embedder");
@@ -93,8 +100,8 @@ describe("memory/embedder", () => {
     ).rejects.toThrow("provider unavailable");
   });
 
-  it("forces local-hash fallback in simulation mode for requested openai provider", async () => {
-    mocks.isSimulationModeEnabled.mockReturnValue(true);
+  it("forces local-hash fallback in offline mode for requested openai provider", async () => {
+    mocks.resolveEmbeddingOfflinePolicy.mockReturnValue({ provider: "local-hash", fallbackDelayMs: 7 });
     const mod = await import("../../src/memory/embedder");
 
     const result = await mod.embedText("Revenue growth", {
@@ -103,7 +110,7 @@ describe("memory/embedder", () => {
 
     expect(result.provider).toBe("local-hash");
     expect(mocks.embeddingsCreate).not.toHaveBeenCalled();
-    expect(mocks.resolveSimulationDelayMs).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveEmbeddingOfflinePolicy).toHaveBeenCalledTimes(1);
     expect(mocks.sleepMs).toHaveBeenCalledTimes(1);
   });
 });

@@ -37,11 +37,11 @@ describe("fetchTavilyResearch", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("returns synthetic report without calling network when simulation mode is enabled", async () => {
+  it("returns synthetic report without calling network when offline mode is enabled", async () => {
     delete process.env.TAVILY_API_KEY;
-    process.env.BOARDROOM_SIMULATION_MODE = "true";
-    process.env.BOARDROOM_SIMULATION_MIN_DELAY_MS = "0";
-    process.env.BOARDROOM_SIMULATION_MAX_DELAY_MS = "0";
+    process.env.BOARDROOM_OFFLINE_MODE = "true";
+    process.env.BOARDROOM_OFFLINE_MIN_DELAY_MS = "0";
+    process.env.BOARDROOM_OFFLINE_MAX_DELAY_MS = "0";
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -52,7 +52,7 @@ describe("fetchTavilyResearch", () => {
 
     expect(report).not.toBeNull();
     expect(report?.items.length).toBeGreaterThan(0);
-    expect(report?.items[0]?.url).toContain("simulation.local");
+    expect(report?.items[0]?.url).toContain("offline.local");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

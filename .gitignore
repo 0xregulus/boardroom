@@ -7,3 +7,8 @@ dist/
 *.tsbuildinfo
 artifacts/
 coverage/
+test-results/
+playwright-report/
+playwright-videos/
+playwright-screenshots/
+playwright-traces/

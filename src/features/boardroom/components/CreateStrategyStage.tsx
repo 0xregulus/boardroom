@@ -180,6 +180,8 @@ export function CreateStrategyStage({
     researchLinksBySection,
     clippedEvidenceBySection,
     researchLoadingSection,
+    researchError,
+    researchErrorSection,
     setActiveSectionKey,
     focusSection,
     requestResearch,
@@ -663,8 +665,10 @@ export function CreateStrategyStage({
               items={evidenceItems}
               offsetsBySection={evidenceOffsetsBySection}
               canvasHeight={evidenceCanvasHeight}
-              onRequestResearch={(sectionKey) => {
-                void requestResearch(sectionKey);
+              researchError={researchError}
+              researchErrorSection={researchErrorSection}
+              onRequestResearch={(sectionKey, prompt) => {
+                void requestResearch(sectionKey, prompt);
               }}
               onClipEvidence={clipResearchEvidence}
             />

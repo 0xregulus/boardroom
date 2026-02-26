@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" role="img" aria-label="Low DQS nucleus">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#2b0d0d"/>
+      <stop offset="100%" stop-color="#120607"/>
+    </radialGradient>
+    <radialGradient id="core" cx="45%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#f87171"/>
+      <stop offset="55%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#7f1d1d"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="300" height="300" fill="url(#bg)"/>
+  <circle cx="150" cy="170" r="95" fill="#ef4444" opacity="0.18" filter="url(#glow)"/>
+
+  <path
+    d="M149 56
+       C180 58 208 76 224 103
+       C242 132 245 167 229 194
+       C212 223 186 239 157 244
+       C125 249 93 240 73 220
+       C50 197 41 165 48 134
+       C56 102 78 77 107 65
+       C122 59 136 56 149 56 Z"
+    fill="url(#core)"
+    stroke="#fecaca"
+    stroke-width="3"
+    filter="url(#glow)"
+  />
+
+  <text x="150" y="276" text-anchor="middle" font-family="Georgia, serif" font-size="16" fill="#fecaca">Low DQS: High Friction</text>
+</svg>

@@ -5,6 +5,7 @@ import { BoardroomFooter } from "../src/features/boardroom/components/BoardroomF
 import { BoardroomHeader } from "../src/features/boardroom/components/BoardroomHeader";
 import { BoardroomStageContent } from "../src/features/boardroom/components/BoardroomStageContent";
 import { useBoardroomHomeController } from "../src/features/boardroom/hooks/useBoardroomHomeController";
+import { listLLMProviderOptions, type LLMProviderOption } from "../src/config/llm_providers";
 import {
   listResearchProviderOptions,
   resolveConfiguredResearchProvider,
@@ -24,23 +25,31 @@ export {
 interface HomePageProps {
   researchToolOptions: ResearchProviderOption[];
   defaultResearchProvider: ResearchProvider;
+  llmProviderOptions: LLMProviderOption[];
 }
 
 export const getServerSideProps: GetServerSideProps<HomePageProps> = async () => {
   const researchToolOptions = listResearchProviderOptions(process.env);
+  const llmProviderOptions = listLLMProviderOptions(process.env);
 
   return {
     props: {
       researchToolOptions,
       defaultResearchProvider: resolveConfiguredResearchProvider(process.env.BOARDROOM_RESEARCH_PROVIDER, process.env),
+      llmProviderOptions,
     },
   };
 };
 
-export default function Home({ researchToolOptions, defaultResearchProvider }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+export default function Home({
+  researchToolOptions,
+  defaultResearchProvider,
+  llmProviderOptions,
+}: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const { headerProps, stageContentProps, footerProps } = useBoardroomHomeController({
     researchToolOptions,
     defaultResearchProvider,
+    llmProviderOptions,
   });
 
   return (

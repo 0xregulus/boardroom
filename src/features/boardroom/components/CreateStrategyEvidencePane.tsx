@@ -13,7 +13,9 @@ interface CreateStrategyEvidencePaneProps {
   items: EvidencePaneItem[];
   offsetsBySection: Record<string, number>;
   canvasHeight: number;
-  onRequestResearch: (sectionKey: string) => void;
+  researchError: string | null;
+  researchErrorSection: string | null;
+  onRequestResearch: (sectionKey: string, prompt: string) => void;
   onClipEvidence: (sectionKey: string, link: SocraticResearchLink) => void;
 }
 
@@ -21,6 +23,8 @@ export function CreateStrategyEvidencePane({
   items,
   offsetsBySection,
   canvasHeight,
+  researchError,
+  researchErrorSection,
   onRequestResearch,
   onClipEvidence,
 }: CreateStrategyEvidencePaneProps) {
@@ -36,9 +40,14 @@ export function CreateStrategyEvidencePane({
           >
             <h4>Evidence Slot</h4>
             <p>{item.prompt}</p>
-            <button type="button" onClick={() => onRequestResearch(item.sectionKey)} disabled={item.isResearching}>
+            <button type="button" onClick={() => onRequestResearch(item.sectionKey, item.prompt)} disabled={item.isResearching}>
               {item.isResearching ? "Verifying..." : "Click to verify with live market data"}
             </button>
+            {researchError && researchErrorSection === item.sectionKey ? (
+              <p className="create-section-evidence-error" role="status">
+                {researchError}
+              </p>
+            ) : null}
             {item.researchLinks.length > 0 ? (
               <ul className="create-section-evidence-list">
                 {item.researchLinks.slice(0, 3).map((link) => (

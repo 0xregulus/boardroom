@@ -2,7 +2,7 @@ import type { LLMProvider } from "./llm_providers";
 import { resolveModelForProvider, resolveProvider } from "./llm_providers";
 import { getPromptDefinition } from "../prompts";
 
-export type { LLMProvider } from "./llm_providers";
+export type { LLMProvider, LLMProviderOption } from "./llm_providers";
 export { PROVIDER_MODEL_OPTIONS, providerOptions, resolveModelForProvider } from "./llm_providers";
 
 export type AgentId = string;

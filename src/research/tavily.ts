@@ -1,6 +1,6 @@
 import { sanitizeForExternalUse } from "../security/redaction";
-import { isSimulationModeEnabled } from "../simulation/mode";
-import { buildSimulatedResearchReport } from "./simulation";
+import { offlineAwareFetch } from "../offline/fetch";
+import { withOfflineFallback } from "../offline/mode";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const DEFAULT_MAX_RESULTS = 4;
@@ -176,7 +176,7 @@ function parseAllowedHosts(): Set<string> {
 }
 
 function requireAllowedHosts(): boolean {
-  const configured = (process.env.TAVILY_REQUIRE_ALLOWED_HOSTS ?? "").trim().toLowerCase();
+  const configured = withOfflineFallback(process.env.TAVILY_REQUIRE_ALLOWED_HOSTS, "false").trim().toLowerCase();
   if (configured === "false") {
     return false;
   }
@@ -346,7 +346,7 @@ function mapResults(results: TavilySearchResultPayload[], maxResults: number, al
 }
 
 function tavilyApiKey(): string {
-  return (process.env.TAVILY_API_KEY ?? "").trim();
+  return withOfflineFallback(process.env.TAVILY_API_KEY, "offline-tavily-key");
 }
 
 export function tavilyEnabled(): boolean {
@@ -354,13 +354,6 @@ export function tavilyEnabled(): boolean {
 }
 
 export async function fetchTavilyResearch(input: TavilyResearchInput): Promise<TavilyResearchReport | null> {
-  if (isSimulationModeEnabled()) {
-    return buildSimulatedResearchReport("Tavily", {
-      ...input,
-      snapshot: sanitizeForExternalUse(input.snapshot) as Record<string, unknown>,
-    });
-  }
-
   const apiKey = tavilyApiKey();
   if (apiKey.length === 0 || typeof fetch !== "function") {
     return null;
@@ -381,7 +374,7 @@ export async function fetchTavilyResearch(input: TavilyResearchInput): Promise<T
   const timer = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(TAVILY_ENDPOINT, {
+    const response = await offlineAwareFetch(TAVILY_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

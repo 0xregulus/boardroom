@@ -4,6 +4,8 @@ import {
   getProviderApiKey,
   getProviderApiKeyEnv,
   getProviderBaseUrl,
+  listLLMProviderOptions,
+  providerEnabled,
   providerFailoverOrder,
   providerOptions,
   resolveModelForProvider,
@@ -51,6 +53,25 @@ describe("llm_providers", () => {
     expect(getProviderApiKeyEnv("Anthropic")).toBe("ANTHROPIC_API_KEY");
     expect(getProviderApiKeyEnv("Mistral")).toBe("MISTRAL_API_KEY");
     expect(getProviderApiKeyEnv("Meta")).toBe("META_API_KEY");
+  });
+
+  it("detects whether a provider has an API key configured", () => {
+    process.env.ANTHROPIC_API_KEY = "anthropic-test-key";
+
+    expect(providerEnabled("Anthropic")).toBe(true);
+    expect(providerEnabled("OpenAI")).toBe(false);
+  });
+
+  it("lists provider options with configured status", () => {
+    process.env.OPENAI_API_KEY = "openai-test-key";
+    process.env.META_API_KEY = "meta-test-key";
+
+    expect(listLLMProviderOptions()).toEqual([
+      { provider: "OpenAI", apiKeyEnv: "OPENAI_API_KEY", configured: true },
+      { provider: "Anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", configured: false },
+      { provider: "Mistral", apiKeyEnv: "MISTRAL_API_KEY", configured: false },
+      { provider: "Meta", apiKeyEnv: "META_API_KEY", configured: true },
+    ]);
   });
 
   it("returns base url from env when defined, otherwise default", () => {

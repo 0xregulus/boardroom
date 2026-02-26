@@ -1,129 +1,40 @@
-# Boardroom
-![Header](docs/images/header.png)
-## Purpose
-Boardroom operationalizes a structured [Strategic Decision Framework](docs/Strategic-Decision-Making-Framework.md) into a multi-agent decision governance system.
+# Boardroom: Enough Thinking.
+**The Multi-Agent Strategic Governance Engine.**
 
-It evaluates a single strategic initiative as an investment decision — not just a feature proposal.
+Boardroom transforms raw ideas into investment-grade strategy decisions. It combines Socratic auditing with adversarial multi-agent debate so each decision is mathematically scored, semantically validated, and stress-tested before execution.
 
-Through executive-style AI reviewers, it:
-	•	Stress-tests assumptions
-	•	Forces explicit trade-offs
-	•	Models downside exposure
-	•	Evaluates capital efficiency
-	•	Surfaces compliance and risk implications
+## The Nucleus: Visualizing Integrity
+At the center of Boardroom is **DecisionPulse2D**: a kinetic SVG nucleus representing strategic integrity in real time.
 
-Each decision is scored across two dimensions:
-	•	Hygiene (are the right artifacts and guardrails in place?)
-	•	Substance (does the strategic and economic logic hold?)
+- **Healthy tension:** Slight asymmetry signals constructive friction from specialized reviewers (CFO, CTO, Compliance, Red Team).
+- **Crystallization:** As logic hardens from draft to executable plan, the pulse shifts from a fluid blob into a faceted polyhedral form.
+- **Truthful geometry:** Shape deformation is driven by weighted agent vectors, not decorative animation.
 
-Boardroom then synthesizes the analysis and applies governance logic to classify the outcome as:
-	•	Approved — Decision meets strategic, financial, and risk thresholds
-	•	Challenged — Gaps or weak trade-offs require revision
-	•	Blocked — Risk, compliance, or capital exposure is unacceptable
+![Low DQS Nucleus](docs/assets/nucleus/low-dqs-nucleus.svg)
+![High DQS Nucleus](docs/assets/nucleus/high-dqs-nucleus.svg)
 
-The goal isn’t to automate strategy.
+## Core Workflow
+1. **The Forge**: Draft the strategy with the **Socratic Observer**, which exposes logic gaps and issues research pills.
+2. **Red Team Mode**: Activate adversarial review to generate **Risk Pills** that must be mitigated.
+3. **The Arena**: Specialized agents debate in a circular arena and physically tug the Nucleus in real time.
+4. **The Artifact**: Generate an immutable executive report with full run history and a final decision stamp.
 
-It’s to institutionalize disciplined decision-making — making capital allocation, downside modeling, and governance explicit before execution begins.
+## Governance Framework
+- **Decision Quality Score (DQS):** Final score blends strategic substance, hygiene, dissent penalties, and confidence penalties.
+- **Semantic Mitigation Gate:** Mitigations are accepted only when the substance validator confirms causal, executable logic.
+- **Run Memory:** Every run is persisted as a board sentiment snapshot for deltas, replay, and longitudinal learning.
 
-## UI Preview
+## Quick Start
+1. Install dependencies: `npm install`
+2. Start local stack with demo data: `npm run local:start:demo`
+3. Open `http://localhost:3000`
+4. Run the critical-state walkthrough: [docs/walkthrough.md](docs/walkthrough.md)
 
-**Dashboard**
-![Dashboard](docs/images/home.png)
+## Documentation Map
+- Governance math and integrity model: [docs/architecture.md](docs/architecture.md)
+- Agent personas and strategic friction matrix: [GUIDE_AGENTS.md](GUIDE_AGENTS.md)
+- API contract (including semantic gate): [docs/api.md](docs/api.md)
+- Documentation index: [docs/README.md](docs/README.md)
 
-**Strategy Details**
-![Strategy Details](docs/images/details.png)
-
-**Workflow**
-![Workflow](docs/images/workflow.png)
-
-**Agent Config**
-![Agent Config](docs/images/config.png)
-
-**Report**
-![Report](docs/images/report.png)
-
-**Create Strategy**
-![Create Strategy](docs/images/create.png)
-
-## Live Governance Briefing UI
-
-Boardroom now presents report output as a **Live Governance Briefing** using an inverted-pyramid structure:
-
-1. **Outcome layer**: decision status (`Approved`, `Challenged`, `Blocked`), DQS gauge, and one-sentence chairperson verdict.
-2. **Substance vs. Hygiene layer**: side-by-side scorecard with primary drivers.
-3. **Debate and evidence layer**: consensus points, primary contention, external citations, live research feed, and refinement log.
-4. **Implementation layer**: PRD summary, risk register, and Decision Ancestry save action.
-
-See the full UI contract in [docs/live-governance-briefing.md](docs/live-governance-briefing.md).
-
-## Non-Technical Local Start (PM, CEO, Founder)
-Use this path if you want a guided setup with almost no manual config.
-
-1. Install [Node.js 20+](https://nodejs.org/en/download) and [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-2. Choose how to start:
-   - Zero data: `npm run local:start`
-   - Demo data: `npm run local:start:demo`
-   - Fresh reset to zero data: `npm run local:start:fresh`
-3. Follow the prompts (it can auto-create `.env`, start local PostgreSQL, and ask for one AI key).
-4. Open `http://localhost:3000`.
-
-macOS option: double-click `Start-Boardroom.command`.
-
-Full guide: [docs/non-technical-local-run.md](docs/non-technical-local-run.md)
-
-## General Usage
-1. Configure environment variables from `.env.example`.
-2. Load strategic decisions into PostgreSQL.
-3. Start the app with `npm run dev`.
-4. Run the workflow from the web UI (`/`) or via `POST /api/workflow/run`.
-
-## Local Simulation Mode
-Use this for UX testing without consuming model/research API quotas.
-
-- Start in simulation mode: `npm run dev --simulation`
-- Alternative (npm arg forwarding): `npm run dev -- --simulation`
-- Optional latency tuning:
-  - `BOARDROOM_SIMULATION_MIN_DELAY_MS` (default `280`)
-  - `BOARDROOM_SIMULATION_MAX_DELAY_MS` (default `1100`)
-
-When simulation mode is active, external AI/research calls are intercepted and replaced with deterministic synthetic responses plus realistic delays.
-
-## Strategic Decision Artifact Creation
-A workflow input artifact is persisted in PostgreSQL and consists of:
-- `decisions`: decision metadata (`id`, `name`, `status`, and supporting fields).
-- `decision_documents`: long-form decision body text used by reviewers.
-- `decision_governance_checks`: optional pre-marked governance gates.
-
-How to create artifacts:
-1. Seed sample artifacts: `npm run db:seed -- --reset`.
-2. Or insert/upsert your own records through your ingestion flow into `decisions` + `decision_documents`.
-
-Note: the in-app "Create Strategy" stage currently builds local draft artifacts for editing and does not persist new strategy records to PostgreSQL.
-
-## Workflow Steps
-1. Build decision context from stored metadata, document text, and inferred governance checks.
-2. Retrieve top-3 similar historical decisions and outcomes from a persisted decision-ancestry vector store (with lexical fallback when vectors are unavailable).
-3. Run automated hygiene checks for quantitative consistency, including structured table/spreadsheet parsing and metadata/document contradiction checks.
-4. Run executive review agents (core agents plus optional custom agents and optional red-team personas).
-5. Run optional cross-agent interaction rounds (`0..3`) to refine reviews.
-6. Generate chairperson synthesis with weighted conflict resolution and evidence citations from reviewer outputs.
-7. Compute DQS from weighted review scores, dissent penalties, confidence penalties, and hygiene blend.
-8. Apply gate decision (`Approved`, `Challenged`, or `Blocked`).
-9. Generate PRD output for approved decisions.
-10. Persist reviews, synthesis, PRD (if approved), and workflow run history.
-
-## Output
-Each run produces:
-- Decision status updates on the source decision.
-- Agent reviews in `decision_reviews` (including chairperson review row).
-- Chairperson synthesis in `decision_synthesis`.
-- PRD output in `decision_prds` when approved.
-- A workflow run record in `workflow_runs` with DQS, gate decision, and state snapshot.
-
-# Next steps
-- Add asynchronous embedding backfill/refresh jobs for very large historical decision catalogs.
-- Expand hygiene table parsing to handle multi-sheet financial exports and scenario tabs.
-- Add UI surfacing for ancestry retrieval mode and chairperson evidence citations in run reports.
-
-# Contributions
-Feel free to fork the repo, open an issue, or submit a pull request.
+## Non-Technical Local Start
+For PM/CEO/founder setup with guided prompts: [docs/non-technical-local-run.md](docs/non-technical-local-run.md)

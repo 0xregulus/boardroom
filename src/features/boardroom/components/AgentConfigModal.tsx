@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
     AgentConfig,
+    type LLMProviderOption,
     LLMProvider,
     PROVIDER_MODEL_OPTIONS,
 } from "../../../config/agent_config";
@@ -18,13 +19,14 @@ import {
     SettingsGlyph,
     TrashGlyph
 } from "./icons";
-import { CORE_AGENT_IDS, PROVIDER_OPTIONS } from "../constants";
+import { CORE_AGENT_IDS } from "../constants";
 
 interface AgentConfigModalProps {
     agentConfigs: AgentConfig[];
     selectedAgentId: string | null;
     researchProvider: ResearchProvider;
     researchOptions: ResearchProviderOption[];
+    llmProviderOptions: LLMProviderOption[];
     onSelectAgent: (id: string) => void;
     onResearchProviderChange: (provider: ResearchProvider) => void;
     onAddAgent: () => void;
@@ -43,6 +45,7 @@ export function AgentConfigModal({
     selectedAgentId,
     researchProvider,
     researchOptions,
+    llmProviderOptions,
     onSelectAgent,
     onResearchProviderChange,
     onAddAgent,
@@ -290,9 +293,13 @@ export function AgentConfigModal({
                                         value={selectedAgentConfig.provider}
                                         onChange={(event) => onProviderChange(selectedAgentConfig.id, event.target.value as LLMProvider)}
                                     >
-                                        {PROVIDER_OPTIONS.map((provider) => (
-                                            <option key={provider} value={provider}>
-                                                {provider}
+                                        {llmProviderOptions.map((option) => (
+                                            <option
+                                                key={option.provider}
+                                                value={option.provider}
+                                                disabled={!option.configured}
+                                            >
+                                                {option.configured ? option.provider : `${option.provider} (Missing ${option.apiKeyEnv})`}
                                             </option>
                                         ))}
                                     </select>
